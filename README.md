@@ -9,6 +9,27 @@
 
 ---
 
+## 📸 界面预览 (Screenshots)
+
+### 1. 全局实时仪表盘（深色模式）
+![Global Dashboard Dark](./docs/screenshots/dashboard-dark.png)
+
+### 2. Windows 原生任务栏嵌入式胶囊 & 桌面悬浮球 HUD
+![Windows Native Taskbar & Floating HUD](./docs/screenshots/widget-hud.png)
+
+### 3. 模型消耗、工作区排行与活跃会话三表同屏明细
+![Details Modal](./docs/screenshots/details-modal.png)
+
+<details>
+<summary>🌞 <b>点击展开：浅色主题看板预览 (Light Mode)</b></summary>
+<br/>
+
+![Global Dashboard Light](./docs/screenshots/dashboard-light.png)
+
+</details>
+
+---
+
 ## ✨ 核心特性 (Features)
 
 1. **双平台全自动本地扫描（零配置即插即用）**
@@ -19,7 +40,7 @@
    - **Claude 官方配额校准**：支持直连 Claude Desktop 本地 `plan-usage-history.json` 采样历史以及 Claude Code `statusLine` 实时 Hook，自动推算并校准 5 小时与 7 天滚动窗口的重置边界与等价美元预算。
 3. **今日实时统计 & 30 天订阅回本率 (ROI) 分析**
    - 独立展示 **今日（00:00 起）** 的实时花费、对话轮数、活跃会话数、模型分布与缓存节省金额。
-   - 内置各主流模型（Claude Opus / Sonnet / Haiku / Fable、Gemini 4 Argon High/Med/Low、Gemini 3 Pro/Flash、GPT-OSS 120B）的官方 Token 定价与缓存命中折算，直观计算 $20 / $100 / $125 / $200 / $250 等各档订阅套餐的 **30 天等价 API 价值与回本倍数 (ROI)**。
+   - 内置各主流模型（Claude Opus / Sonnet / Haiku / Fable、Gemini 4 Argon High/Med/Low、Gemini 3 Pro/Flash、GPT-OSS 120B）的官方 Token 定价与缓存命中折算，直观计算 \$20 / \$100 / \$125 / \$200 / \$250 等各档订阅套餐的 **30 天等价 API 价值与回本倍数 (ROI)**。
 4. **Windows 原生桌面悬浮球 & 任务栏嵌入式胶囊 (WPF HUD)**
    - 提供纯 PowerShell + WPF 编写的轻量级桌面监控组件（`src/floating-ball.ps1`），支持：
      - **任务栏无缝嵌入模式**（防遮挡推荐，支持拖拽贴合底部任务栏）与 **自由悬浮球模式**。
@@ -97,6 +118,8 @@ node src/cli.mjs all
 
 ```text
 ai-usage-dashboard/
+├── docs/
+│   └── screenshots/            # README 预览截图
 ├── public/
 │   ├── index.html              # 单文件响应式 Web 仪表盘 (支持深浅色主题、年度热力图、趋势图、明细表)
 │   └── voxel-orb.ico           # 多尺寸 Voxel HUD 图标
