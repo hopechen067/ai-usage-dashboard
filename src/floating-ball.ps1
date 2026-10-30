@@ -4,6 +4,10 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$rootDir = Split-Path -Parent $scriptDir
+$serverScript = Join-Path $scriptDir 'server.mjs'
+
 # Ensure single instance using a Local EventWaitHandle + Mutex
 $wakeEventName = "Local\AiUsageFloatingBallWakeEvent_$Port"
 $mutexName = "Local\AiUsageFloatingBallMutex_$Port"
@@ -11,6 +15,11 @@ $mutexName = "Local\AiUsageFloatingBallMutex_$Port"
 $createdNew = $false
 $mutex = New-Object System.Threading.Mutex($true, $mutexName, [ref]$createdNew)
 if (-not $createdNew) {
+  if (Test-Path $serverScript) {
+    try {
+      Start-Process -FilePath "node" -ArgumentList "`"$serverScript`"" -WorkingDirectory $rootDir -WindowStyle Hidden | Out-Null
+    } catch {}
+  }
   try {
     $evt = [System.Threading.EventWaitHandle]::OpenExisting($wakeEventName)
     $evt.Set() | Out-Null

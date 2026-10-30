@@ -1,7 +1,7 @@
 // Model pricing & Subscription Quota estimation engine
 // Prices are in USD per 1M tokens (API-equivalent value for subscription ROI & quota weighting)
 
-export const PRICING_VERSION = 3;
+export const PRICING_VERSION = 6;
 
 export const MODEL_PRICING = {
   // Claude 5.5 / 4.5 / 4.6 family (Official Anthropic Opus 4.5/5.5 pricing: $5 / $25 per 1M)
@@ -199,14 +199,13 @@ export function normalizeModelKey(rawModel = '') {
   if (m.includes('sonnet')) return 'claude-sonnet-5';
   if (m.includes('haiku')) return 'claude-haiku-5-5';
   if (m.includes('gpt-oss') || m.includes('gpt')) return 'gpt-oss-120b';
+  if (m.includes('flash')) return 'gemini-flash';
   if (m.includes('argon') && m.includes('low')) return 'gemini-4-argon-low';
   if (m.includes('argon') && m.includes('medium')) return 'gemini-4-argon-medium';
   if (m.includes('argon')) return 'gemini-4-argon-high';
   if (m.includes('gemini 3') || m.includes('gemini-3')) {
-    if (m.includes('flash')) return 'gemini-flash';
     return 'gemini-3';
   }
-  if (m.includes('flash')) return 'gemini-flash';
   return m;
 }
 

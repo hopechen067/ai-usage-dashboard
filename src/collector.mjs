@@ -12,6 +12,7 @@ const LIVE_QUOTA_FILE = path.join(DATA_DIR, 'live_quota.json');
 const DISK_CACHE_FILE = path.join(DATA_DIR, 'parsed_cache.json');
 
 // Incremental file parse cache: filePath -> { mtimeMs, size, pricingVersion, data }
+const ENGINE_VERSION = 6;
 const fileCache = new Map();
 let cacheDirty = false;
 
@@ -22,7 +23,7 @@ try {
   if (fs.existsSync(DISK_CACHE_FILE)) {
     const rawCache = JSON.parse(fs.readFileSync(DISK_CACHE_FILE, 'utf8'));
     for (const [k, v] of Object.entries(rawCache)) {
-      if (v && v.pricingVersion === PRICING_VERSION) {
+      if (v && v.pricingVersion === ENGINE_VERSION) {
         fileCache.set(k, v);
       }
     }
@@ -116,7 +117,7 @@ function parseClaudeJsonlFile(filePath, stat) {
     cached &&
     cached.mtimeMs === stat.mtimeMs &&
     cached.size === stat.size &&
-    cached.pricingVersion === PRICING_VERSION
+    cached.pricingVersion === ENGINE_VERSION
   ) {
     return cached.data;
   }
@@ -125,6 +126,8 @@ function parseClaudeJsonlFile(filePath, stat) {
   const lines = content.split('\n');
   // Deduplicate turns by message.id (Claude Code writes multiple streaming lines per API turn)
   const turnMap = new Map();
+  const uuidMap = new Map();
+  let lastPreRequestTsMs = null;
   let sessionId = path.basename(filePath, '.jsonl');
   let cwd = '';
   let firstUserPrompt = '';
@@ -138,9 +141,27 @@ function parseClaudeJsonlFile(filePath, stat) {
       const obj = JSON.parse(line);
       if (obj.sessionId && !sessionId) sessionId = obj.sessionId;
       if (obj.cwd && !cwd) cwd = obj.cwd;
+      const objTsMs = obj.timestamp ? Date.parse(obj.timestamp) : NaN;
       if (obj.timestamp) {
         if (!firstTimestamp || obj.timestamp < firstTimestamp) firstTimestamp = obj.timestamp;
         if (!lastTimestamp || obj.timestamp > lastTimestamp) lastTimestamp = obj.timestamp;
+      }
+
+      const msg = obj.message;
+      const isAssistantUsageLine = Boolean(msg && msg.usage && msg.model && msg.model !== '<synthetic>');
+      const attachmentType = obj.attachment?.type || null;
+
+      if (obj.uuid) {
+        uuidMap.set(obj.uuid, {
+          parentUuid: obj.parentUuid || null,
+          tsMs: objTsMs,
+          msgId: isAssistantUsageLine ? (msg.id || null) : null,
+          attachmentType
+        });
+      }
+
+      if (!isAssistantUsageLine && attachmentType !== 'deferred_tools_record' && !Number.isNaN(objTsMs)) {
+        lastPreRequestTsMs = objTsMs;
       }
 
       if (!firstUserPrompt && obj.type === 'user' && obj.message?.content) {
@@ -152,8 +173,7 @@ function parseClaudeJsonlFile(filePath, stat) {
         }
       }
 
-      const msg = obj.message;
-      if (msg && msg.usage && msg.model && msg.model !== '<synthetic>') {
+      if (isAssistantUsageLine) {
         const msgId = msg.id || `${sessionId}_line_${i}`;
         const u = msg.usage;
         const inputTokens = Number(u.input_tokens || 0);
@@ -164,6 +184,47 @@ function parseClaudeJsonlFile(filePath, stat) {
 
         if (inputTokens + cacheCreationTokens + cacheReadTokens + outputTokens === 0) {
           continue;
+        }
+
+        const prev = turnMap.get(msgId);
+        let reqStartMs = prev?.reqStartMs ?? null;
+        if (reqStartMs === null) {
+          let currParent = obj.parentUuid || null;
+          let hops = 0;
+          while (currParent && hops < 8) {
+            const pNode = uuidMap.get(currParent);
+            if (!pNode) break;
+            if (
+              pNode.msgId !== msgId &&
+              pNode.attachmentType !== 'deferred_tools_record' &&
+              !Number.isNaN(pNode.tsMs)
+            ) {
+              reqStartMs = pNode.tsMs;
+              break;
+            }
+            currParent = pNode.parentUuid;
+            hops++;
+          }
+          if (reqStartMs === null && lastPreRequestTsMs !== null) {
+            reqStartMs = lastPreRequestTsMs;
+          }
+        }
+
+        const endTsMs = !Number.isNaN(objTsMs)
+          ? Math.max(prev?.endTsMs || 0, objTsMs)
+          : prev?.endTsMs || 0;
+        const thinkingDurationMs = Math.max(
+          prev?.thinkingDurationMs || 0,
+          Number(obj.thinkingDurationMs || 0)
+        );
+
+        const toolIds = prev?.toolIds || new Set();
+        if (Array.isArray(msg.content)) {
+          for (const c of msg.content) {
+            if (c.type === 'tool_use') {
+              toolIds.add(c.id || `line_${i}`);
+            }
+          }
         }
 
         // Always keep latest entry for the same message.id
@@ -182,17 +243,53 @@ function parseClaudeJsonlFile(filePath, stat) {
           cacheReadTokens,
           outputTokens,
           thinkingTokens,
-          toolCallsCount: Array.isArray(msg.content)
-            ? msg.content.filter(c => c.type === 'tool_use').length
-            : 0
+          toolCallsCount: toolIds.size,
+          toolIds,
+          reqStartMs,
+          endTsMs,
+          thinkingDurationMs
         });
       }
     } catch {}
   }
 
-  const turns = Array.from(turnMap.values()).map(t => {
-    const cost = calculateTurnCost(t);
-    return { ...t, ...cost };
+  const turns = Array.from(turnMap.values()).map(({ toolIds, reqStartMs, endTsMs, ...t }) => {
+    let durationMs = null;
+    let tps = null;
+    let thinkingTps = null;
+
+    if (t.thinkingDurationMs >= 100 && t.thinkingTokens > 0) {
+      const rawThinkTps = t.thinkingTokens / (t.thinkingDurationMs / 1000);
+      if (rawThinkTps > 0 && rawThinkTps <= 450) {
+        thinkingTps = Number(rawThinkTps.toFixed(1));
+      }
+    }
+
+    let rawDurMs = reqStartMs && endTsMs > reqStartMs ? endTsMs - reqStartMs : 0;
+    if (t.thinkingDurationMs > 0 && (!rawDurMs || rawDurMs < t.thinkingDurationMs)) {
+      rawDurMs = t.thinkingDurationMs;
+    }
+    if (rawDurMs >= 150 && rawDurMs <= 300_000 && t.outputTokens > 0) {
+      const rawTps = t.outputTokens / (rawDurMs / 1000);
+      if (rawTps > 0 && rawTps <= 450) {
+        durationMs = Math.round(rawDurMs);
+        tps = Number(rawTps.toFixed(1));
+      }
+    }
+    if (tps === null && thinkingTps !== null && t.thinkingDurationMs > 0) {
+      durationMs = Math.round(t.thinkingDurationMs);
+      tps = thinkingTps;
+    }
+
+    const turnWithPerf = {
+      ...t,
+      thinkingDurationMs: t.thinkingDurationMs > 0 ? Math.round(t.thinkingDurationMs) : null,
+      durationMs,
+      tps,
+      thinkingTps
+    };
+    const cost = calculateTurnCost(turnWithPerf);
+    return { ...turnWithPerf, ...cost };
   });
 
   const data = {
@@ -213,7 +310,7 @@ function parseClaudeJsonlFile(filePath, stat) {
   fileCache.set(filePath, {
     mtimeMs: stat.mtimeMs,
     size: stat.size,
-    pricingVersion: PRICING_VERSION,
+    pricingVersion: ENGINE_VERSION,
     data
   });
   cacheDirty = true;
@@ -326,7 +423,8 @@ function parseAntigravityTranscript(filePath, stat, convId, surfaceLabel, meta =
     cached &&
     cached.mtimeMs === stat.mtimeMs &&
     cached.size === stat.size &&
-    cached.pricingVersion === PRICING_VERSION &&
+    cached.pricingVersion === ENGINE_VERSION &&
+    cached.data?.spawnedSubagents !== undefined &&
     !cached.data?.turns?.some(t => String(t.model).startsWith('(['))
   ) {
     return cached.data;
@@ -335,21 +433,59 @@ function parseAntigravityTranscript(filePath, stat, convId, surfaceLabel, meta =
   const content = fs.readFileSync(filePath, 'utf8');
   const lines = content.split('\n');
 
-  let activeModel = 'Gemini 4 Argon (High)';
+  let activeModel = meta.agentName === 'research' ? 'Gemini 3.8 Flash' : 'Gemini 4 Argon (High)';
+  let hasExplicitModel = false;
+  let detectedParentId = meta.parentConversationId || '';
+  const spawnedSubagents = {};
   let firstUserPrompt = '';
   let firstTimestamp = null;
   let lastTimestamp = null;
   let workspaceFromLogs = meta.workspacePath || '';
   const turns = [];
+  const parsedSteps = [];
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim();
     if (!line) continue;
     try {
       const obj = JSON.parse(line);
+      parsedSteps.push({ obj, lineIdx: i });
+    } catch {}
+  }
+
+  let fullLinesCache = null;
+  const getFullStepObj = lineIdx => {
+    try {
+      if (fullLinesCache === null) {
+        const fullPath = filePath.replace(/transcript\.jsonl$/i, 'transcript_full.jsonl');
+        fullLinesCache = fs.existsSync(fullPath)
+          ? fs.readFileSync(fullPath, 'utf8').split('\n')
+          : [];
+      }
+      const raw = fullLinesCache[lineIdx]?.trim();
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
+  };
+
+  for (let idx = 0; idx < parsedSteps.length; idx++) {
+    const { obj, lineIdx: i } = parsedSteps[idx];
+    try {
       if (obj.created_at) {
         if (!firstTimestamp || obj.created_at < firstTimestamp) firstTimestamp = obj.created_at;
         if (!lastTimestamp || obj.created_at > lastTimestamp) lastTimestamp = obj.created_at;
+      }
+
+      if (idx === 0 && obj.type === 'SYSTEM_MESSAGE' && typeof obj.content === 'string') {
+        const senderMatch = obj.content.match(/sender=([0-9a-f-]{36})/i);
+        if (senderMatch && !detectedParentId) {
+          detectedParentId = senderMatch[1];
+        }
+        if (!firstUserPrompt) {
+          const contentMatch = obj.content.match(/content=([^\r\n<]+)/);
+          if (contentMatch) firstUserPrompt = cleanUserPreview(contentMatch[1]);
+        }
       }
 
       if (obj.type === 'USER_INPUT' && typeof obj.content === 'string') {
@@ -358,6 +494,7 @@ function parseAntigravityTranscript(filePath, stat, convId, surfaceLabel, meta =
         );
         if (modelMatch) {
           activeModel = modelMatch[1].trim();
+          hasExplicitModel = true;
         }
         if (!firstUserPrompt) {
           firstUserPrompt = cleanUserPreview(obj.content);
@@ -370,13 +507,97 @@ function parseAntigravityTranscript(filePath, stat, convId, surfaceLabel, meta =
         const outputTokens = Number(obj.output_tokens || 0);
         if (inputTokens + cacheReadTokens + outputTokens === 0) continue;
 
-        if (!workspaceFromLogs && Array.isArray(obj.tool_calls)) {
-          for (const tc of obj.tool_calls) {
-            const p = tc.args?.Path || tc.args?.CommandLine || '';
-            const m = String(p).match(/([A-Za-z]:\\+[^"'\s\\]+\\+[^"'\s\\]+(?:\\+[^"'\s\\]+)?)/);
-            if (m && !/\\(Users|Windows|Program Files|AppData)\\/i.test(m[1])) {
-              workspaceFromLogs = m[1].replace(/\\\\/g, '\\');
-              break;
+        if (Array.isArray(obj.tool_calls)) {
+          if (!workspaceFromLogs) {
+            for (const tc of obj.tool_calls) {
+              const p = tc.args?.Path || tc.args?.CommandLine || '';
+              const m = String(p).match(/([A-Za-z]:\\+[^"'\s\\]+\\+[^"'\s\\]+(?:\\+[^"'\s\\]+)?)/);
+              if (m && !/\\(Users|Windows|Program Files|AppData)\\/i.test(m[1])) {
+                workspaceFromLogs = m[1].replace(/\\\\/g, '\\');
+                break;
+              }
+            }
+          }
+
+          let subCalls = obj.tool_calls.filter(tc => tc.name === 'invoke_subagent');
+          if (subCalls.length > 0) {
+            if (
+              Array.isArray(obj.truncated_fields) &&
+              obj.truncated_fields.includes('tool_calls')
+            ) {
+              const fullObj = getFullStepObj(i);
+              if (fullObj && Array.isArray(fullObj.tool_calls)) {
+                subCalls = fullObj.tool_calls.filter(tc => tc.name === 'invoke_subagent');
+              }
+            }
+            const spawnedIds = [];
+            for (let j = idx + 1; j < parsedSteps.length; j++) {
+              const stepJ = parsedSteps[j].obj;
+              if (stepJ.type === 'PLANNER_RESPONSE') break;
+              if (
+                (stepJ.type === 'GENERIC' || stepJ.type === 'SYSTEM_MESSAGE') &&
+                typeof stepJ.content === 'string'
+              ) {
+                let textJ = stepJ.content;
+                if (
+                  !textJ.includes('conversationId') &&
+                  Array.isArray(stepJ.truncated_fields) &&
+                  stepJ.truncated_fields.includes('content')
+                ) {
+                  const fullJ = getFullStepObj(parsedSteps[j].lineIdx);
+                  if (fullJ && typeof fullJ.content === 'string') textJ = fullJ.content;
+                }
+                const mSub = textJ.match(
+                  /Created the following subagent:[\s\S]*?"conversationId"\s*:\s*"([0-9a-f-]{36})"/i
+                );
+                if (mSub) spawnedIds.push(mSub[1]);
+              }
+            }
+            for (let k = 0; k < Math.min(subCalls.length, spawnedIds.length); k++) {
+              const rawM = String(subCalls[k].args?.Model || '')
+                .replace(/^["'\s\\]+|["'\s\\]+$/g, '')
+                .toLowerCase();
+              const rawType = String(subCalls[k].args?.TypeName || '')
+                .replace(/^["'\s\\]+|["'\s\\]+$/g, '')
+                .toLowerCase();
+              let subModel = '__INHERIT__';
+              if (
+                rawM === 'flash' ||
+                rawM === 'flash_lite' ||
+                rawM.includes('flash') ||
+                (!rawM && rawType === 'research')
+              ) {
+                subModel = 'Gemini 3.8 Flash';
+              } else if (rawM === 'pro') {
+                subModel = 'Gemini 4 Argon (High)';
+              } else if (rawM && rawM !== 'inherit') {
+                subModel = rawM;
+              }
+              spawnedSubagents[spawnedIds[k]] =
+                subModel === '__INHERIT__' ? `__INHERIT__:${activeModel}` : subModel;
+            }
+          }
+        }
+
+        let durationMs = null;
+        let tps = null;
+        const nextStep = parsedSteps[idx + 1]?.obj;
+        if (nextStep && nextStep.type === 'GENERIC' && outputTokens > 0) {
+          const startMs = obj.created_at ? Date.parse(obj.created_at) : NaN;
+          const endMs = nextStep.created_at ? Date.parse(nextStep.created_at) : NaN;
+          let rawDurMs = !Number.isNaN(startMs) && !Number.isNaN(endMs) ? endMs - startMs : 0;
+          if (rawDurMs <= 0 && idx > 0) {
+            const prevStep = parsedSteps[idx - 1]?.obj;
+            const prevMs = prevStep?.created_at ? Date.parse(prevStep.created_at) : NaN;
+            if (!Number.isNaN(prevMs) && !Number.isNaN(endMs) && endMs > prevMs && endMs - prevMs <= 60_000) {
+              rawDurMs = endMs - prevMs;
+            }
+          }
+          if (rawDurMs >= 1000 && rawDurMs <= 180_000) {
+            const rawTps = outputTokens / (rawDurMs / 1000);
+            if (rawTps > 0 && rawTps <= 400) {
+              durationMs = Math.round(rawDurMs);
+              tps = Number(rawTps.toFixed(1));
             }
           }
         }
@@ -393,6 +614,10 @@ function parseAntigravityTranscript(filePath, stat, convId, surfaceLabel, meta =
           cacheReadTokens,
           outputTokens,
           thinkingTokens: 0,
+          thinkingDurationMs: null,
+          durationMs,
+          tps,
+          thinkingTps: null,
           toolCallsCount: Array.isArray(obj.tool_calls) ? obj.tool_calls.length : 0
         };
         const cost = calculateTurnCost(turnBase);
@@ -409,8 +634,10 @@ function parseAntigravityTranscript(filePath, stat, convId, surfaceLabel, meta =
     projectPath: finalWorkspace,
     projectLabel: formatWorkspaceLabel(finalWorkspace),
     title: meta.title || firstUserPrompt || `Antigravity ${convId.slice(0, 8)}`,
-    isSubagent: Boolean(meta.parentConversationId),
-    parentConversationId: meta.parentConversationId || null,
+    isSubagent: Boolean(detectedParentId),
+    parentConversationId: detectedParentId || null,
+    hasExplicitModel,
+    spawnedSubagents,
     firstTimestamp: firstTimestamp || new Date(stat.mtimeMs).toISOString(),
     lastTimestamp: lastTimestamp || new Date(stat.mtimeMs).toISOString(),
     turns
@@ -419,7 +646,7 @@ function parseAntigravityTranscript(filePath, stat, convId, surfaceLabel, meta =
   fileCache.set(cacheKey, {
     mtimeMs: stat.mtimeMs,
     size: stat.size,
-    pricingVersion: PRICING_VERSION,
+    pricingVersion: ENGINE_VERSION,
     data
   });
   cacheDirty = true;
@@ -459,6 +686,46 @@ function scanAllAntigravitySessions() {
           sessions.push(parsed);
         }
       } catch {}
+    }
+  }
+
+  // Post-pass: resolve subagent models from parent invoke_subagent(Model: "flash" / "pro" / "inherit") calls
+  const subagentModelMap = new Map();
+  const sessionById = new Map();
+  for (const sess of sessions) {
+    sessionById.set(sess.sessionId, sess);
+    if (sess.spawnedSubagents) {
+      for (const [childId, mod] of Object.entries(sess.spawnedSubagents)) {
+        subagentModelMap.set(childId, { parentId: sess.sessionId, model: mod });
+      }
+    }
+  }
+
+  for (let pass = 0; pass < 3; pass++) {
+    for (const sess of sessions) {
+      if (sess.hasExplicitModel) continue;
+      const entry = subagentModelMap.get(sess.sessionId);
+      let resolvedModel = null;
+      if (entry) {
+        if (entry.model.startsWith('__INHERIT__:')) {
+          const parentSess = sessionById.get(entry.parentId);
+          resolvedModel =
+            parentSess?.turns?.[0]?.model || entry.model.slice('__INHERIT__:'.length);
+        } else {
+          resolvedModel = entry.model;
+        }
+      } else if (sess.isSubagent && sess.parentConversationId) {
+        const parentSess = sessionById.get(sess.parentConversationId);
+        if (parentSess?.turns?.length > 0) {
+          resolvedModel = parentSess.turns[0].model;
+        }
+      }
+      if (resolvedModel && sess.turns.length > 0 && sess.turns[0].model !== resolvedModel) {
+        sess.turns = sess.turns.map(t => {
+          const updatedBase = { ...t, model: resolvedModel };
+          return { ...updatedBase, ...calculateTurnCost(updatedBase) };
+        });
+      }
     }
   }
 
@@ -733,8 +1000,293 @@ function findDiscreteCycleWindow(sortedTurns, windowDurationMs, nowMs) {
   };
 }
 
+function toLocalDateStr(msOrIso) {
+  const d = new Date(msOrIso);
+  if (Number.isNaN(d.getTime())) return '';
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function toLocalHM(ms) {
+  const d = new Date(ms);
+  if (Number.isNaN(d.getTime())) return '--:--';
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+// Compute daily breakdown of 7-day weekly quota + 5-hour windows triggered/used per day
+function buildWeeklyDailyBreakdown({
+  sortedTurns,
+  cycle7dStartMs,
+  sevenDayResetsAtMs,
+  sevenDayUsedPct,
+  sevenDayBudgetUsd,
+  fiveHourBudgetUsd,
+  nowMs,
+  officialSamples = []
+}) {
+  const FIVE_H_MS = 5 * 3600 * 1000;
+  const SEVEN_D_MS = 7 * 24 * 3600 * 1000;
+  const START_GRACE_MS = 45 * 1000;
+  const weekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+  const todayStr = toLocalDateStr(nowMs);
+
+  const effStartMs = cycle7dStartMs || nowMs - SEVEN_D_MS;
+  const effEndMs = sevenDayResetsAtMs || effStartMs + SEVEN_D_MS;
+
+  // 1. Reconstruct all discrete 5-hour windows across the recent history up to nowMs
+  const turnsForWindows = sortedTurns.filter(t => t.ts >= effStartMs - FIVE_H_MS);
+  const all5hWindows = [];
+  let curWin = null;
+  for (const t of turnsForWindows) {
+    if (!curWin || t.ts >= curWin.endMs) {
+      curWin = {
+        index: all5hWindows.length + 1,
+        startMs: t.ts,
+        endMs: t.ts + FIVE_H_MS,
+        lastTurnMs: t.ts,
+        turns: 1,
+        costUsd: t.totalCostUsd,
+        totalTokens:
+          t.inputTokens + t.cacheCreationTokens + t.cacheReadTokens + t.outputTokens
+      };
+      all5hWindows.push(curWin);
+    } else {
+      curWin.lastTurnMs = t.ts;
+      curWin.turns += 1;
+      curWin.costUsd += t.totalCostUsd;
+      curWin.totalTokens +=
+        t.inputTokens + t.cacheCreationTokens + t.cacheReadTokens + t.outputTokens;
+    }
+  }
+
+  // 2. Build the calendar days covering [effStartMs .. min(nowMs, effEndMs)] plus full 7-day cycle slots
+  const startDayObj = new Date(effStartMs);
+  startDayObj.setHours(0, 0, 0, 0);
+  const endDayBoundMs = Math.max(nowMs, effEndMs - 1000);
+  const endDayObj = new Date(endDayBoundMs);
+  endDayObj.setHours(0, 0, 0, 0);
+
+  const dayList = [];
+  const dayMap = new Map();
+  let cursor = new Date(startDayObj);
+  let safety = 0;
+  while (cursor <= endDayObj && safety < 10) {
+    safety++;
+    const dateStr = toLocalDateStr(cursor.getTime());
+    const dayStartMs = cursor.getTime();
+    const dayEndMs = dayStartMs + 24 * 3600 * 1000;
+    // Effective active slice within the 7d cycle
+    const sliceStartMs = Math.max(dayStartMs, effStartMs - START_GRACE_MS);
+    const sliceEndMs = Math.min(dayEndMs, effEndMs);
+
+    const entry = {
+      date: dateStr,
+      shortDate: dateStr.slice(5),
+      weekday: weekdays[cursor.getDay()],
+      isToday: dateStr === todayStr,
+      isFuture: dayStartMs > nowMs,
+      isPartialCycleStart: dayStartMs < effStartMs && effStartMs < dayEndMs,
+      isPartialCycleEnd: dayStartMs < effEndMs && effEndMs < dayEndMs,
+      cycleSliceNote:
+        dayStartMs < effStartMs && effStartMs < dayEndMs
+          ? `${toLocalHM(effStartMs)} 起算`
+          : dayStartMs < effEndMs && effEndMs < dayEndMs
+          ? `至 ${toLocalHM(effEndMs)} 重置`
+          : '',
+      dayStartMs,
+      dayEndMs,
+      sliceStartMs,
+      sliceEndMs,
+      turnsList: [],
+      allDayTurnsList: []
+    };
+    dayList.push(entry);
+    dayMap.set(dateStr, entry);
+    cursor.setDate(cursor.getDate() + 1);
+  }
+
+  // 3. Assign turns to days (both strictly inside current 7d cycle and full-day for reference)
+  const cycleTurns = sortedTurns.filter(
+    t => t.ts >= effStartMs - START_GRACE_MS && t.ts <= effEndMs
+  );
+  for (const t of sortedTurns) {
+    const dStr = toLocalDateStr(t.ts);
+    const dEntry = dayMap.get(dStr);
+    if (!dEntry) continue;
+    dEntry.allDayTurnsList.push(t);
+    if (t.ts >= effStartMs - START_GRACE_MS && t.ts <= effEndMs) {
+      dEntry.turnsList.push(t);
+    }
+  }
+
+  // 4. Check if official `plan-usage-history.json` samples exist in this 7d cycle for direct sd delta
+  const totalCycleCostUsd = cycleTurns.reduce((s, t) => s + t.totalCostUsd, 0);
+  const targetWeekUsedPct = Math.max(0, Number(sevenDayUsedPct || 0));
+  const safe7dBudget = Math.max(0.01, Number(sevenDayBudgetUsd || 100));
+  const safe5hBudget = Math.max(0.01, Number(fiveHourBudgetUsd || 20));
+
+  // Compute raw weekly quota % per day (calibrated so sum across cycle days equals official `sevenDayUsedPct`)
+  let rawPctSum = 0;
+  for (const d of dayList) {
+    const metrics = sumTurnMetrics(d.turnsList);
+    d.metrics = metrics;
+    if (totalCycleCostUsd > 0 && targetWeekUsedPct > 0) {
+      d.rawWeeklyPct = (metrics.costUsd / totalCycleCostUsd) * targetWeekUsedPct;
+    } else {
+      d.rawWeeklyPct = Math.min(100, (metrics.costUsd / safe7dBudget) * 100);
+    }
+    rawPctSum += d.rawWeeklyPct;
+  }
+
+  // Also count distinct 5h windows active in each day and across the whole 7d cycle
+  const cycle5hWindows = all5hWindows.filter(
+    w => w.lastTurnMs >= effStartMs - START_GRACE_MS && w.startMs <= effEndMs
+  );
+
+  let cumulativeWeeklyPct = 0;
+  const formattedDays = dayList.map(d => {
+    const m = d.metrics;
+    const weeklyQuotaPct = Number(d.rawWeeklyPct.toFixed(2));
+    cumulativeWeeklyPct = Number(Math.min(100, cumulativeWeeklyPct + weeklyQuotaPct).toFixed(1));
+    const shareOfUsedPct =
+      rawPctSum > 0 ? Number(((d.rawWeeklyPct / rawPctSum) * 100).toFixed(1)) : 0;
+
+    // Discrete 5h windows that had turns on this day (within the 7d cycle)
+    const dayWindows = [];
+    for (const w of cycle5hWindows) {
+      // Find turns belonging toboth this 5h window and this day's cycle turns
+      const turnsInWinOnDay = d.turnsList.filter(
+        t => t.ts >= w.startMs && t.ts < w.endMs
+      );
+      if (turnsInWinOnDay.length > 0) {
+        const winCostOnDay = turnsInWinOnDay.reduce((s, t) => s + t.totalCostUsd, 0);
+        const winPctLoad = Math.min(100, Number(((winCostOnDay / safe5hBudget) * 100).toFixed(1)));
+        const firstTs = turnsInWinOnDay[0].ts;
+        const winEndOnDay = Math.min(w.endMs, d.dayEndMs);
+        dayWindows.push({
+          windowIndex: w.index,
+          startedToday: w.startMs >= d.dayStartMs && w.startMs < d.dayEndMs,
+          startLabel: toLocalHM(firstTs),
+          endLabel: toLocalHM(w.endMs),
+          rangeLabel: `${toLocalHM(w.startMs)}~${toLocalHM(w.endMs)}`,
+          turns: turnsInWinOnDay.length,
+          costUsd: Number(winCostOnDay.toFixed(2)),
+          fiveHourUsedPct: winPctLoad
+        });
+      }
+    }
+
+    // Equivalent number of full 100% 5-hour windows consumed on this day
+    // Using both cost/fiveHourBudgetUsd and weeklyQuotaPct * (sevenDayBudgetUsd / fiveHourBudgetUsd)
+    const fiveHourEquivalent = Number((m.costUsd / safe5hBudget).toFixed(2));
+
+    return {
+      date: d.date,
+      shortDate: d.shortDate,
+      weekday: d.weekday,
+      isToday: d.isToday,
+      isFuture: d.isFuture,
+      cycleSliceNote: d.cycleSliceNote,
+      weeklyQuotaPct,
+      cumulativeWeeklyPct,
+      shareOfUsedPct,
+      fiveHourWindowsCount: dayWindows.length,
+      fiveHourWindowsStarted: dayWindows.filter(w => w.startedToday).length,
+      fiveHourEquivalent,
+      fiveHourWindows: dayWindows,
+      turns: m.turns,
+      totalTokens: m.totalTokens,
+      inputTokens: m.inputTokens,
+      cacheReadTokens: m.cacheReadTokens,
+      outputTokens: m.outputTokens,
+      costUsd: Number(m.costUsd.toFixed(2)),
+      avgTps: m.avgTps,
+      peakTps: m.peakTps
+    };
+  });
+
+  const activeDaysCount = formattedDays.filter(d => d.turns > 0).length;
+  const elapsedDaysCount = Math.max(
+    1,
+    formattedDays.filter(d => !d.isFuture).length
+  );
+  const avgDailyWeeklyPct = Number((targetWeekUsedPct / elapsedDaysCount).toFixed(2));
+  const total5hEquivalents = Number(
+    formattedDays.reduce((s, d) => s + d.fiveHourEquivalent, 0).toFixed(2)
+  );
+  const peakDay = formattedDays.reduce(
+    (best, d) => (!best || d.weeklyQuotaPct > best.weeklyQuotaPct ? d : best),
+    null
+  );
+
+  return {
+    cycleStartAt: new Date(effStartMs).toISOString(),
+    resetsAt: new Date(effEndMs).toISOString(),
+    totalWeeklyUsedPct: Number(targetWeekUsedPct.toFixed(1)),
+    remainingWeeklyPct: Number(Math.max(0, 100 - targetWeekUsedPct).toFixed(1)),
+    activeDaysCount,
+    elapsedDaysCount,
+    avgDailyWeeklyPct,
+    totalFiveHourWindowsCount: cycle5hWindows.length,
+    totalFiveHourEquivalents: total5hEquivalents,
+    fiveHourToWeeklyRatio: Number((safe7dBudget / safe5hBudget).toFixed(1)),
+    peakDay: peakDay && peakDay.turns > 0 ? { date: peakDay.date, shortDate: peakDay.shortDate, weekday: peakDay.weekday, weeklyQuotaPct: peakDay.weeklyQuotaPct } : null,
+    days: formattedDays
+  };
+}
+
+function createTpsTracker() {
+  return {
+    timedTurns: 0,
+    timedOutputTokens: 0,
+    timedDurationMs: 0,
+    peakTps: 0,
+    thinkingTimedTurns: 0,
+    thinkingTimedTokens: 0,
+    thinkingTimedDurationMs: 0
+  };
+}
+
+function addTurnToTpsTracker(tracker, turn) {
+  if (turn.durationMs > 0 && turn.outputTokens > 0 && turn.tps > 0) {
+    tracker.timedTurns += 1;
+    tracker.timedOutputTokens += turn.outputTokens;
+    tracker.timedDurationMs += turn.durationMs;
+    if (turn.outputTokens >= 30 && turn.tps > tracker.peakTps) {
+      tracker.peakTps = turn.tps;
+    } else if (tracker.peakTps === 0 && turn.tps > tracker.peakTps) {
+      tracker.peakTps = turn.tps;
+    }
+  }
+  if (turn.thinkingDurationMs > 0 && turn.thinkingTokens > 0 && turn.thinkingTps > 0) {
+    tracker.thinkingTimedTurns += 1;
+    tracker.thinkingTimedTokens += turn.thinkingTokens;
+    tracker.thinkingTimedDurationMs += turn.thinkingDurationMs;
+  }
+}
+
+function finalizeTpsTracker(tracker) {
+  const avgTps =
+    tracker.timedDurationMs > 0
+      ? Number((tracker.timedOutputTokens / (tracker.timedDurationMs / 1000)).toFixed(1))
+      : 0;
+  const avgThinkingTps =
+    tracker.thinkingTimedDurationMs > 0
+      ? Number((tracker.thinkingTimedTokens / (tracker.thinkingTimedDurationMs / 1000)).toFixed(1))
+      : 0;
+  return {
+    timedTurns: tracker.timedTurns,
+    avgTps,
+    peakTps: Number(tracker.peakTps.toFixed(1)),
+    avgThinkingTps
+  };
+}
+
 function sumTurnMetrics(arr) {
-  return arr.reduce(
+  const tpsTracker = createTpsTracker();
+  const base = arr.reduce(
     (acc, item) => {
       acc.turns += 1;
       acc.inputTokens += item.inputTokens;
@@ -745,6 +1297,7 @@ function sumTurnMetrics(arr) {
         item.inputTokens + item.cacheCreationTokens + item.cacheReadTokens + item.outputTokens;
       acc.costUsd += item.totalCostUsd;
       acc.cacheSavingsUsd += item.cacheSavingsUsd;
+      addTurnToTpsTracker(tpsTracker, item);
       return acc;
     },
     {
@@ -758,6 +1311,7 @@ function sumTurnMetrics(arr) {
       cacheSavingsUsd: 0
     }
   );
+  return { ...base, ...finalizeTpsTracker(tpsTracker) };
 }
 
 // 5. Compute subscription quota status + exact cycle boundaries for Claude & Antigravity
@@ -981,6 +1535,17 @@ function computeClaudeQuota(allTurns, settings, liveQuotaEntry, officialHistory)
 
   const roiMultiplier = plan.monthlyPriceUsd > 0 ? stats30d.costUsd / plan.monthlyPriceUsd : 0;
 
+  const dailyBreakdown = buildWeeklyDailyBreakdown({
+    sortedTurns,
+    cycle7dStartMs,
+    sevenDayResetsAtMs,
+    sevenDayUsedPct,
+    sevenDayBudgetUsd,
+    fiveHourBudgetUsd,
+    nowMs,
+    officialSamples: samples
+  });
+
   return {
     platform: 'claude',
     planId: plan.id,
@@ -1003,7 +1568,8 @@ function computeClaudeQuota(allTurns, settings, liveQuotaEntry, officialHistory)
       usedPercentage: Number(sevenDayUsedPct.toFixed(1)),
       remainingPercentage: Number(Math.max(0, 100 - sevenDayUsedPct).toFixed(1)),
       cycleStartAt: new Date(cycle7dStartMs).toISOString(),
-      resetsAt: sevenDayResetsAtMs ? new Date(sevenDayResetsAtMs).toISOString() : null
+      resetsAt: sevenDayResetsAtMs ? new Date(sevenDayResetsAtMs).toISOString() : null,
+      dailyBreakdown
     },
     thirtyDay: {
       ...stats30d,
@@ -1209,6 +1775,26 @@ function computeAntigravityQuota(allTurns, settings, liveQuotaEntry) {
 
   const roiMultiplier = plan.monthlyPriceUsd > 0 ? stats30d.costUsd / plan.monthlyPriceUsd : 0;
 
+  const geminiDailyBreakdown = buildWeeklyDailyBreakdown({
+    sortedTurns: geminiTurns,
+    cycle7dStartMs,
+    sevenDayResetsAtMs,
+    sevenDayUsedPct,
+    sevenDayBudgetUsd,
+    fiveHourBudgetUsd,
+    nowMs
+  });
+
+  const tpDailyBreakdown = buildWeeklyDailyBreakdown({
+    sortedTurns: thirdPartyTurns,
+    cycle7dStartMs: tp7dStartMs,
+    sevenDayResetsAtMs: tp7dResetsAtMs,
+    sevenDayUsedPct: tp7dUsedPct,
+    sevenDayBudgetUsd: thirdParty7dBudgetUsd,
+    fiveHourBudgetUsd: thirdParty5hBudgetUsd,
+    nowMs
+  });
+
   return {
     platform: 'antigravity',
     planId: plan.id,
@@ -1237,7 +1823,8 @@ function computeAntigravityQuota(allTurns, settings, liveQuotaEntry) {
       remainingPercentage: Number(Math.max(0, 100 - sevenDayUsedPct).toFixed(1)),
       nativeRemainingPct: sevenDayNativeRemPct,
       cycleStartAt: new Date(cycle7dStartMs).toISOString(),
-      resetsAt: sevenDayResetsAtMs ? new Date(sevenDayResetsAtMs).toISOString() : null
+      resetsAt: sevenDayResetsAtMs ? new Date(sevenDayResetsAtMs).toISOString() : null,
+      dailyBreakdown: geminiDailyBreakdown
     },
     thirdParty: {
       groupName: 'Claude and GPT models',
@@ -1258,7 +1845,8 @@ function computeAntigravityQuota(allTurns, settings, liveQuotaEntry) {
         remainingPercentage: Number(Math.max(0, 100 - tp7dUsedPct).toFixed(1)),
         nativeRemainingPct: tp7dNativeRemPct,
         cycleStartAt: new Date(tp7dStartMs).toISOString(),
-        resetsAt: tp7dResetsAtMs ? new Date(tp7dResetsAtMs).toISOString() : null
+        resetsAt: tp7dResetsAtMs ? new Date(tp7dResetsAtMs).toISOString() : null,
+        dailyBreakdown: tpDailyBreakdown
       }
     },
     thirtyDay: {
@@ -1318,6 +1906,11 @@ export async function getDashboardSnapshot({ days = 30 } = {}) {
     antigravity: { turns: 0, sessions: 0, inputTokens: 0, cacheWriteTokens: 0, cacheReadTokens: 0, outputTokens: 0, totalTokens: 0, costUsd: 0, cacheSavingsUsd: 0 },
     combined: { turns: 0, sessions: 0, inputTokens: 0, cacheWriteTokens: 0, cacheReadTokens: 0, outputTokens: 0, totalTokens: 0, costUsd: 0, cacheSavingsUsd: 0 }
   };
+  const totalsTpsTrackers = {
+    claude: createTpsTracker(),
+    antigravity: createTpsTracker(),
+    combined: createTpsTracker()
+  };
 
   // Dedicated Today's real-time statistics (00:00 local time -> now)
   const todayTotals = {
@@ -1325,6 +1918,11 @@ export async function getDashboardSnapshot({ days = 30 } = {}) {
     claude: { turns: 0, sessions: 0, inputTokens: 0, cacheWriteTokens: 0, cacheReadTokens: 0, outputTokens: 0, totalTokens: 0, costUsd: 0, cacheSavingsUsd: 0 },
     antigravity: { turns: 0, sessions: 0, inputTokens: 0, cacheWriteTokens: 0, cacheReadTokens: 0, outputTokens: 0, totalTokens: 0, costUsd: 0, cacheSavingsUsd: 0, geminiTurns: 0, geminiCostUsd: 0, thirdPartyTurns: 0, thirdPartyCostUsd: 0 },
     combined: { turns: 0, sessions: 0, inputTokens: 0, cacheWriteTokens: 0, cacheReadTokens: 0, outputTokens: 0, totalTokens: 0, costUsd: 0, cacheSavingsUsd: 0 }
+  };
+  const todayTpsTrackers = {
+    claude: createTpsTracker(),
+    antigravity: createTpsTracker(),
+    combined: createTpsTracker()
   };
   const todayModelMap = new Map();
 
@@ -1347,6 +1945,7 @@ export async function getDashboardSnapshot({ days = 30 } = {}) {
         pT.totalTokens += tokSum;
         pT.costUsd += t.totalCostUsd;
         pT.cacheSavingsUsd += t.cacheSavingsUsd;
+        addTurnToTpsTracker(todayTpsTrackers[t.platform], t);
 
         if (t.platform === 'antigravity') {
           if (/claude|gpt|opus|sonnet|haiku|fable/i.test(String(t.model || ''))) {
@@ -1366,6 +1965,7 @@ export async function getDashboardSnapshot({ days = 30 } = {}) {
         todayTotals.combined.totalTokens += tokSum;
         todayTotals.combined.costUsd += t.totalCostUsd;
         todayTotals.combined.cacheSavingsUsd += t.cacheSavingsUsd;
+        addTurnToTpsTracker(todayTpsTrackers.combined, t);
 
         const mKey = `${t.platform}:${t.modelLabel}`;
         if (!todayModelMap.has(mKey)) {
@@ -1380,7 +1980,8 @@ export async function getDashboardSnapshot({ days = 30 } = {}) {
             outputTokens: 0,
             totalTokens: 0,
             costUsd: 0,
-            cacheSavingsUsd: 0
+            cacheSavingsUsd: 0,
+            tpsTracker: createTpsTracker()
           });
         }
         const mE = todayModelMap.get(mKey);
@@ -1392,14 +1993,19 @@ export async function getDashboardSnapshot({ days = 30 } = {}) {
         mE.totalTokens += tokSum;
         mE.costUsd += t.totalCostUsd;
         mE.cacheSavingsUsd += t.cacheSavingsUsd;
+        addTurnToTpsTracker(mE.tpsTracker, t);
       }
     }
   }
+  Object.assign(todayTotals.claude, finalizeTpsTracker(todayTpsTrackers.claude));
+  Object.assign(todayTotals.antigravity, finalizeTpsTracker(todayTpsTrackers.antigravity));
+  Object.assign(todayTotals.combined, finalizeTpsTracker(todayTpsTrackers.combined));
   todayTotals.models = Array.from(todayModelMap.values())
-    .map(m => {
+    .map(({ tpsTracker, ...m }) => {
       const pool = m.inputTokens + m.cacheWriteTokens + m.cacheReadTokens;
       return {
         ...m,
+        ...finalizeTpsTracker(tpsTracker),
         cacheHitRate: pool > 0 ? Number(((m.cacheReadTokens / pool) * 100).toFixed(1)) : 0,
         sharePct:
           todayTotals.combined.costUsd > 0
@@ -1461,6 +2067,7 @@ export async function getDashboardSnapshot({ days = 30 } = {}) {
 
     let sInput = 0, sCacheWrite = 0, sCacheRead = 0, sOutput = 0, sCost = 0, sSavings = 0;
     const sessionModels = new Set();
+    const sessionTpsTracker = createTpsTracker();
 
     for (const t of turnsInWindow) {
       const pTarget = totals[t.platform];
@@ -1474,6 +2081,7 @@ export async function getDashboardSnapshot({ days = 30 } = {}) {
       pTarget.totalTokens += tokSum;
       pTarget.costUsd += t.totalCostUsd;
       pTarget.cacheSavingsUsd += t.cacheSavingsUsd;
+      addTurnToTpsTracker(totalsTpsTrackers[t.platform], t);
 
       totals.combined.turns += 1;
       totals.combined.inputTokens += t.inputTokens;
@@ -1483,6 +2091,7 @@ export async function getDashboardSnapshot({ days = 30 } = {}) {
       totals.combined.totalTokens += tokSum;
       totals.combined.costUsd += t.totalCostUsd;
       totals.combined.cacheSavingsUsd += t.cacheSavingsUsd;
+      addTurnToTpsTracker(totalsTpsTrackers.combined, t);
 
       sInput += t.inputTokens;
       sCacheWrite += t.cacheCreationTokens;
@@ -1491,6 +2100,7 @@ export async function getDashboardSnapshot({ days = 30 } = {}) {
       sCost += t.totalCostUsd;
       sSavings += t.cacheSavingsUsd;
       sessionModels.add(t.modelLabel || t.model);
+      addTurnToTpsTracker(sessionTpsTracker, t);
 
       // Daily aggregation (local date string YYYY-MM-DD)
       const dObj = new Date(t.timestamp);
@@ -1507,7 +2117,9 @@ export async function getDashboardSnapshot({ days = 30 } = {}) {
             claudeCostUsd: 0,
             agyCostUsd: 0,
             claudeTurns: 0,
-            agyTurns: 0
+            agyTurns: 0,
+            claudeTpsTracker: createTpsTracker(),
+            agyTpsTracker: createTpsTracker()
           });
         }
         const dayEntry = dailyMap.get(dayKey);
@@ -1515,10 +2127,12 @@ export async function getDashboardSnapshot({ days = 30 } = {}) {
           dayEntry.claudeTokens += tokSum;
           dayEntry.claudeCostUsd += t.totalCostUsd;
           dayEntry.claudeTurns += 1;
+          addTurnToTpsTracker(dayEntry.claudeTpsTracker, t);
         } else {
           dayEntry.agyTokens += tokSum;
           dayEntry.agyCostUsd += t.totalCostUsd;
           dayEntry.agyTurns += 1;
+          addTurnToTpsTracker(dayEntry.agyTpsTracker, t);
         }
 
         const hr = dObj.getHours();
@@ -1542,7 +2156,8 @@ export async function getDashboardSnapshot({ days = 30 } = {}) {
           outputTokens: 0,
           totalTokens: 0,
           costUsd: 0,
-          cacheSavingsUsd: 0
+          cacheSavingsUsd: 0,
+          tpsTracker: createTpsTracker()
         });
       }
       const mEntry = modelMap.get(mKey);
@@ -1554,6 +2169,7 @@ export async function getDashboardSnapshot({ days = 30 } = {}) {
       mEntry.totalTokens += tokSum;
       mEntry.costUsd += t.totalCostUsd;
       mEntry.cacheSavingsUsd += t.cacheSavingsUsd;
+      addTurnToTpsTracker(mEntry.tpsTracker, t);
     }
 
     totals[session.platform].sessions += 1;
@@ -1612,17 +2228,35 @@ export async function getDashboardSnapshot({ days = 30 } = {}) {
       cacheHitRate: Number(cacheHitRate.toFixed(1)),
       costUsd: Number(sCost.toFixed(4)),
       cacheSavingsUsd: Number(sSavings.toFixed(4)),
+      ...finalizeTpsTracker(sessionTpsTracker),
       firstTimestamp: session.firstTimestamp,
       lastTimestamp: session.lastTimestamp
     });
   }
 
-  const dailySeries = Array.from(dailyMap.values()).sort((a, b) => a.date.localeCompare(b.date));
+  Object.assign(totals.claude, finalizeTpsTracker(totalsTpsTrackers.claude));
+  Object.assign(totals.antigravity, finalizeTpsTracker(totalsTpsTrackers.antigravity));
+  Object.assign(totals.combined, finalizeTpsTracker(totalsTpsTrackers.combined));
+
+  const dailySeries = Array.from(dailyMap.values())
+    .map(({ claudeTpsTracker, agyTpsTracker, ...d }) => {
+      const cTps = finalizeTpsTracker(claudeTpsTracker);
+      const aTps = finalizeTpsTracker(agyTpsTracker);
+      return {
+        ...d,
+        claudeAvgTps: cTps.avgTps,
+        claudePeakTps: cTps.peakTps,
+        agyAvgTps: aTps.avgTps,
+        agyPeakTps: aTps.peakTps
+      };
+    })
+    .sort((a, b) => a.date.localeCompare(b.date));
   const models = Array.from(modelMap.values())
-    .map(m => {
+    .map(({ tpsTracker, ...m }) => {
       const pool = m.inputTokens + m.cacheWriteTokens + m.cacheReadTokens;
       return {
         ...m,
+        ...finalizeTpsTracker(tpsTracker),
         cacheHitRate: pool > 0 ? Number(((m.cacheReadTokens / pool) * 100).toFixed(1)) : 0,
         sharePct: totals.combined.costUsd > 0 ? Number(((m.costUsd / totals.combined.costUsd) * 100).toFixed(1)) : 0
       };
@@ -1645,6 +2279,7 @@ export async function getDashboardSnapshot({ days = 30 } = {}) {
   const scanDurationMs = Number((performance.now() - startPerf).toFixed(1));
 
   return {
+    engineVersion: ENGINE_VERSION,
     generatedAt: new Date().toISOString(),
     scanDurationMs,
     daysFilter: days,

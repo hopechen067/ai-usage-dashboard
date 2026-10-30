@@ -17,15 +17,17 @@ console.log(`===================================================================
 
 if (snap.todayStats) {
   const ts = snap.todayStats;
+  const cTps = ts.claude.avgTps > 0 ? ` | ⚡ ${ts.claude.avgTps} tok/s (峰值 ${ts.claude.peakTps})` : '';
+  const aTps = ts.antigravity.avgTps > 0 ? ` | ⚡ ${ts.antigravity.avgTps} tok/s` : '';
   console.log(`[🌞 今日实时统计 (${ts.date})]`);
   console.log(
     `  ├─ 今日总计       : $${ts.combined.costUsd.toFixed(2)} | ${ts.combined.turns} 轮 (${ts.combined.sessions} 会话) | ${fmtTok(ts.combined.totalTokens)} tokens | 缓存省 $${ts.combined.cacheSavingsUsd.toFixed(2)}`
   );
   console.log(
-    `  ├─ 今日 Claude    : $${ts.claude.costUsd.toFixed(2)} | ${ts.claude.turns} 轮 (${ts.claude.sessions} 会话) | ${fmtTok(ts.claude.totalTokens)} tokens`
+    `  ├─ 今日 Claude    : $${ts.claude.costUsd.toFixed(2)} | ${ts.claude.turns} 轮 (${ts.claude.sessions} 会话) | ${fmtTok(ts.claude.totalTokens)} tokens${cTps}`
   );
   console.log(
-    `  └─ 今日 Antigravity: $${ts.antigravity.costUsd.toFixed(2)} | ${ts.antigravity.turns} 轮 (${ts.antigravity.sessions} 会话) | Gemini ${ts.antigravity.geminiTurns}轮 ($${ts.antigravity.geminiCostUsd.toFixed(2)}) · 第三方 ${ts.antigravity.thirdPartyTurns}轮 ($${ts.antigravity.thirdPartyCostUsd.toFixed(2)})\n`
+    `  └─ 今日 Antigravity: $${ts.antigravity.costUsd.toFixed(2)} | ${ts.antigravity.turns} 轮 (${ts.antigravity.sessions} 会话) | Gemini ${ts.antigravity.geminiTurns}轮 ($${ts.antigravity.geminiCostUsd.toFixed(2)}) · 第三方 ${ts.antigravity.thirdPartyTurns}轮 ($${ts.antigravity.thirdPartyCostUsd.toFixed(2)})${aTps}\n`
   );
 }
 
@@ -55,8 +57,9 @@ for (const key of ['claude', 'antigravity']) {
 
 console.log(`--- 模型消耗明细 ---`);
 for (const m of snap.models) {
+  const tpsStr = m.avgTps > 0 ? `${String(m.avgTps).padStart(5)} tok/s (峰 ${String(m.peakTps).padStart(5)})` : `   -- tok/s           `;
   console.log(
-    `  • [${m.platform.toUpperCase()}] ${m.model.padEnd(24)} | ${String(m.turns).padStart(5)} 轮 | 总计 ${fmtTok(m.totalTokens).padStart(8)} (缓存命中 ${m.cacheHitRate}%) | 等价 $${m.costUsd.toFixed(2).padStart(7)} (${m.sharePct}%)`
+    `  • [${m.platform.toUpperCase()}] ${m.model.padEnd(24)} | ${String(m.turns).padStart(5)} 轮 | 总计 ${fmtTok(m.totalTokens).padStart(8)} (缓存命中 ${m.cacheHitRate}%) | 速率 ${tpsStr} | 等价 $${m.costUsd.toFixed(2).padStart(7)} (${m.sharePct}%)`
   );
 }
 console.log('');

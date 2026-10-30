@@ -919,6 +919,115 @@
       font-variant-numeric: tabular-nums;
     }
 
+    .btn-weekly-breakdown {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.2rem;
+      font-family: var(--font-sans);
+      font-size: 0.61rem;
+      font-weight: 700;
+      padding: 0.06rem 0.38rem;
+      border-radius: var(--r-tag);
+      background-color: var(--bg-card);
+      border: 1px solid var(--voxel-border-strong);
+      color: var(--text-primary);
+      cursor: pointer;
+      transition: all 0.14s ease;
+      line-height: 1.25;
+      white-space: nowrap;
+    }
+    .btn-weekly-breakdown:hover {
+      border-color: var(--agy-color);
+      color: var(--agy-color);
+      background-color: var(--agy-soft);
+      transform: translateY(-0.5px);
+    }
+
+    #weekly-breakdown-dialog {
+      inline-size: min(95vw, 1080px);
+      block-size: min(86dvh, 720px);
+      min-inline-size: min(94vw, 680px);
+      min-block-size: min(80dvh, 420px);
+    }
+    #weekly-breakdown-dialog[open] {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .wb-kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 0.5rem;
+      margin-block-end: 0.65rem;
+      flex-shrink: 0;
+    }
+    @media (max-width: 820px) {
+      .wb-kpi-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+    .wb-kpi-card {
+      background-color: var(--bg-pod);
+      border: 1px solid var(--voxel-border);
+      border-radius: 10px;
+      padding: 0.45rem 0.65rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.15rem;
+    }
+    .wb-kpi-label {
+      font-size: 0.66rem;
+      color: var(--text-secondary);
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .wb-kpi-val {
+      font-family: var(--font-mono);
+      font-size: 1.05rem;
+      font-weight: 800;
+      color: var(--text-primary);
+      font-variant-numeric: tabular-nums;
+    }
+    .wb-kpi-sub {
+      font-family: var(--font-mono);
+      font-size: 0.63rem;
+      color: var(--text-dim);
+    }
+    .wb-bar-wrap {
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+      min-inline-size: 135px;
+    }
+    .wb-bar-track {
+      flex: 1;
+      block-size: 7px;
+      border-radius: 4px;
+      background-color: light-dark(rgba(15, 23, 42, 0.08), rgba(255, 255, 255, 0.08));
+      overflow: hidden;
+    }
+    .wb-bar-fill {
+      block-size: 100%;
+      border-radius: 4px;
+      transition: width 0.2s ease;
+    }
+    .wb-win-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.22rem;
+      font-family: var(--font-mono);
+      font-size: 0.63rem;
+      padding: 0.08rem 0.38rem;
+      border-radius: 4px;
+      background-color: var(--bg-card);
+      border: 1px solid var(--voxel-border);
+      color: var(--text-secondary);
+      margin-inline-end: 0.22rem;
+      margin-block: 0.08rem;
+    }
+
     /* Precision Segmented Energy Track */
     .voxel-bar-track {
       display: grid;
@@ -1731,7 +1840,10 @@
 
               <div class="meter-box" id="box-claude-7d" data-quota-pool="claude-7d">
                 <div class="meter-top">
-                  <span class="meter-title">7D 周度</span>
+                  <span class="meter-title">
+                    7D 周度
+                    <button type="button" class="btn-weekly-breakdown" data-open-weekly="claude" title="查看 Claude 本周每日消耗周额度、占比及 5 小时窗口统计">📊 每日明细</button>
+                  </span>
                   <span class="meter-pct" id="claude-7d-pct">已用 0% · 剩 100%</span>
                 </div>
                 <div class="voxel-bar-track" id="claude-7d-bar"></div>
@@ -1781,7 +1893,10 @@
 
               <div class="meter-box" id="box-agy-gemini-7d" data-quota-pool="agy-gemini-7d">
                 <div class="meter-top">
-                  <span class="meter-title">Gem 7D</span>
+                  <span class="meter-title">
+                    Gem 7D
+                    <button type="button" class="btn-weekly-breakdown" data-open-weekly="agy-gemini" title="查看 Gemini 本周每日消耗周额度、占比及 5 小时窗口统计">📊 每日明细</button>
+                  </span>
                   <span class="meter-pct" id="agy-7d-pct">0% · 剩 100%</span>
                 </div>
                 <div class="voxel-bar-track" id="agy-7d-bar"></div>
@@ -1814,7 +1929,10 @@
 
               <div class="meter-box" id="box-agy-tp-7d" data-quota-pool="agy-tp-7d">
                 <div class="meter-top">
-                  <span class="meter-title">3P 7D</span>
+                  <span class="meter-title">
+                    3P 7D
+                    <button type="button" class="btn-weekly-breakdown" data-open-weekly="agy-tp" title="查看第三方池 (Claude/GPT) 本周每日消耗周额度、占比及 5 小时窗口统计">📊 每日明细</button>
+                  </span>
                   <span class="meter-pct" id="agy-tp-7d-pct">0% · 剩 100%</span>
                 </div>
                 <div class="voxel-bar-track" id="agy-tp-7d-bar"></div>
@@ -1894,6 +2012,7 @@
                 <button type="button" data-metric="cost" class="active">额度($)</button>
                 <button type="button" data-metric="tokens">Token</button>
                 <button type="button" data-metric="turns">轮次</button>
+                <button type="button" data-metric="tps" title="每日平均 Token 输出速率 (tok/s)">速率(tok/s)</button>
               </div>
             </div>
           </div>
@@ -1976,6 +2095,7 @@
                 <th>平台</th>
                 <th class="num">轮次</th>
                 <th class="num">总 Token</th>
+                <th class="num" title="每秒输出 Token 速率 (平均 / 峰值)">输出速率</th>
                 <th class="num">命中</th>
                 <th class="num">等价价值</th>
               </tr>
@@ -2029,6 +2149,7 @@
                 <th>工作区</th>
                 <th class="num">轮次</th>
                 <th class="num">总 Token</th>
+                <th class="num" title="会话平均每秒输出 Token 速率">速率</th>
                 <th class="num">等价费用</th>
               </tr>
             </thead>
@@ -2086,12 +2207,90 @@
     </form>
   </dialog>
 
+  <!-- Native Modal Dialog for Daily Weekly-Quota & 5h Windows Breakdown -->
+  <dialog id="weekly-breakdown-dialog" closedby="any" aria-labelledby="weekly-breakdown-title">
+    <div class="dialog-header" id="weekly-breakdown-header">
+      <h2 id="weekly-breakdown-title">📅 周额度每日消耗与 5 小时窗口统计</h2>
+      <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem;">
+        <div class="segmented" id="weekly-pool-switcher" role="group" aria-label="配额池切换">
+          <button type="button" data-weekly-pool="claude" class="active">🟧 Claude 周额度</button>
+          <button type="button" data-weekly-pool="agy-gemini">🟦 AGY Gemini 周额度</button>
+          <button type="button" data-weekly-pool="agy-tp">🟪 AGY 第三方周额度</button>
+        </div>
+        <button type="button" class="btn" id="btn-maximize-weekly" title="最大化 / 还原窗口">🗖</button>
+        <button type="button" class="btn" id="btn-close-weekly" aria-label="关闭周额度每日统计弹窗">✕</button>
+      </div>
+    </div>
+
+    <!-- Top 5 Summary KPI Cards for Selected 7D Weekly Cycle -->
+    <div class="wb-kpi-grid" id="wb-kpi-grid">
+      <div class="wb-kpi-card">
+        <div class="wb-kpi-label"><span>本周已用周额度</span><span class="badge badge-today" id="wb-plan-tag">--</span></div>
+        <div class="wb-kpi-val" id="wb-used-pct">--%</div>
+        <div class="wb-kpi-sub" id="wb-rem-pct">剩余 --%</div>
+      </div>
+      <div class="wb-kpi-card">
+        <div class="wb-kpi-label"><span>本周使用 5h 窗口</span><span>⏱️ 5H</span></div>
+        <div class="wb-kpi-val" id="wb-5h-count">-- 个</div>
+        <div class="wb-kpi-sub" id="wb-5h-equiv">折合 -- 个满载 5h</div>
+      </div>
+      <div class="wb-kpi-card">
+        <div class="wb-kpi-label"><span>日均消耗周额度</span><span id="wb-active-days">-- 天活跃</span></div>
+        <div class="wb-kpi-val" id="wb-avg-daily-pct">--% / 日</div>
+        <div class="wb-kpi-sub" id="wb-peak-day">单日最高: --</div>
+      </div>
+      <div class="wb-kpi-card">
+        <div class="wb-kpi-label"><span>本周累计等价价值</span><span>USD</span></div>
+        <div class="wb-kpi-val" id="wb-total-cost">$0.00</div>
+        <div class="wb-kpi-sub" id="wb-budget-info">周预算 ~$-- (≈--个5h)</div>
+      </div>
+      <div class="wb-kpi-card">
+        <div class="wb-kpi-label"><span>当前 7D 周期范围</span><span id="wb-reset-countdown">--</span></div>
+        <div class="wb-kpi-val" id="wb-cycle-range" style="font-size: 0.84rem; margin-block-start: 0.12rem;">--</div>
+        <div class="wb-kpi-sub" id="wb-cycle-turns">共 0 轮 · 0 Tok</div>
+      </div>
+    </div>
+
+    <!-- Detailed Daily Table -->
+    <div class="detail-panel" style="flex: 1; min-block-size: 0;">
+      <div class="section-header">
+        <h3 class="section-title" id="wb-table-caption">📊 本周每日消耗周额度、占比与 5 小时窗口明细</h3>
+        <span style="font-size: 0.72rem; color: var(--text-secondary);" id="wb-source-note">--</span>
+      </div>
+      <div class="table-scroll" tabindex="0" role="region" aria-labelledby="wb-table-caption">
+        <table>
+          <caption>当前 7 天周周期内每日消耗周额度百分比、占比及 5 小时窗口统计表</caption>
+          <thead>
+            <tr>
+              <th>日期 / 星期</th>
+              <th>当日消耗周额度 (%)</th>
+              <th class="num" title="当日消耗占本周累计已用周额度的百分比">占已用比</th>
+              <th class="num" title="截至当日结束累计已消耗的周额度百分比">累计已用</th>
+              <th title="当日触发或使用的 5 小时配额窗口数量及折合满载 5h 窗口数">使用几个 5 小时 (窗口时段 &amp; 折算)</th>
+              <th class="num">轮次 / Token</th>
+              <th class="num">输出速率</th>
+              <th class="num">当日等价价值</th>
+            </tr>
+          </thead>
+          <tbody id="wb-days-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="voxel-resize-grip" title="按住并拖动右下角调整弹窗大小">
+      <svg viewBox="0 0 10 10">
+        <path d="M8 2 L2 8 M9 5 L5 9 M9 8 L8 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none" />
+      </svg>
+    </div>
+  </dialog>
+
   <script>
     let currentSnapshot = null;
     let selectedDays = '30';
     let selectedPlatform = 'all';
     let selectedChartMetric = 'cost';
     let selectedModelScope = 'period';
+    let selectedWeeklyPool = 'claude';
 
     const fmtTokens = n => {
       const val = Number(n || 0);
@@ -2102,6 +2301,7 @@
     };
 
     const fmtUsd = n => '$' + Number(n || 0).toFixed(2);
+    const fmtTps = n => (n && n > 0 ? `${Number(n).toFixed(1)} tok/s` : '--');
     const fmtUsdShort = n => {
       const val = Number(n || 0);
       if (val >= 100) return '$' + Math.round(val);
@@ -2208,6 +2408,7 @@
             <div class="tip-row"><span class="tip-label">🟦 Antigravity 消耗</span><span class="tip-val">${fmtUsd(todayStats.antigravity.costUsd)} (${todayStats.antigravity.turns}轮)</span></div>
             <div class="tip-row tip-total"><span class="tip-label">💰 今日等价总值</span><span class="tip-val" style="color:var(--today-color);">${fmtUsd(todayStats.combined.costUsd)}</span></div>
             <div class="tip-row"><span class="tip-label">⚡ 今日总吞吐</span><span class="tip-val">${fmtTokens(todayStats.combined.totalTokens)} Tok</span></div>
+            <div class="tip-row"><span class="tip-label">🚀 平均输出速率</span><span class="tip-val">${fmtTps(todayStats.combined.avgTps)} (峰值 ${fmtTps(todayStats.combined.peakTps)})</span></div>
             <div class="tip-row"><span class="tip-label">💡 缓存节约</span><span class="tip-val" style="color:var(--ok-color);">${fmtUsd(todayStats.combined.cacheSavingsUsd)}</span></div>
           `;
         } else if (key === 'kpi-today-claude' && todayStats?.claude) {
@@ -2218,6 +2419,8 @@
             <div class="tip-row"><span class="tip-label">输入 Token</span><span class="tip-val">${fmtTokens(tc.inputTokens)}</span></div>
             <div class="tip-row"><span class="tip-label">缓存读取</span><span class="tip-val">${fmtTokens(tc.cacheReadTokens)}</span></div>
             <div class="tip-row"><span class="tip-label">输出 Token</span><span class="tip-val">${fmtTokens(tc.outputTokens)}</span></div>
+            <div class="tip-row"><span class="tip-label">平均输出速率</span><span class="tip-val" style="color:var(--claude-color);">${fmtTps(tc.avgTps)} (峰值 ${fmtTps(tc.peakTps)})</span></div>
+            ${tc.avgThinkingTps > 0 ? `<div class="tip-row"><span class="tip-label">思考生成速率</span><span class="tip-val">${fmtTps(tc.avgThinkingTps)}</span></div>` : ''}
             <div class="tip-row tip-total"><span class="tip-label">今日等价费用</span><span class="tip-val">${fmtUsd(tc.costUsd)}</span></div>
             <div class="tip-row"><span class="tip-label">缓存节约价值</span><span class="tip-val" style="color:var(--ok-color);">${fmtUsd(tc.cacheSavingsUsd)}</span></div>
           `;
@@ -2229,6 +2432,7 @@
             <div class="tip-row"><span class="tip-label">🟪 第三方 Claude/GPT</span><span class="tip-val">${fmtUsd(ta.thirdPartyCostUsd)} (${ta.thirdPartyTurns}轮)</span></div>
             <div class="tip-row tip-total"><span class="tip-label">今日等价费用</span><span class="tip-val">${fmtUsd(ta.costUsd)}</span></div>
             <div class="tip-row"><span class="tip-label">今日总吞吐</span><span class="tip-val">${fmtTokens(ta.totalTokens)} Tok</span></div>
+            <div class="tip-row"><span class="tip-label">平均输出速率</span><span class="tip-val" style="color:var(--agy-color);">${fmtTps(ta.avgTps)} (峰值 ${fmtTps(ta.peakTps)})</span></div>
           `;
         } else if (key === 'kpi-tokens') {
           const t = totals.combined;
@@ -2238,6 +2442,8 @@
             <div class="tip-row"><span class="tip-label">缓存写入 Tokens</span><span class="tip-val">${fmtTokens(t.cacheWriteTokens)}</span></div>
             <div class="tip-row"><span class="tip-label">缓存命中读取</span><span class="tip-val" style="color:var(--ok-color);">${fmtTokens(t.cacheReadTokens)}</span></div>
             <div class="tip-row"><span class="tip-label">模型输出 Tokens</span><span class="tip-val">${fmtTokens(t.outputTokens)}</span></div>
+            <div class="tip-row"><span class="tip-label">🚀 平均输出速率</span><span class="tip-val">${fmtTps(t.avgTps)} (峰值 ${fmtTps(t.peakTps)})</span></div>
+            ${t.avgThinkingTps > 0 ? `<div class="tip-row"><span class="tip-label">🧠 思考生成速率</span><span class="tip-val">${fmtTps(t.avgThinkingTps)}</span></div>` : ''}
             <div class="tip-row tip-total"><span class="tip-label">总吞吐量</span><span class="tip-val">${fmtTokens(t.totalTokens)}</span></div>
           `;
         } else if (key === 'kpi-cost') {
@@ -2252,7 +2458,9 @@
           html = `
             <div class="tip-header"><span>⚡ 会话与交互统计</span></div>
             <div class="tip-row"><span class="tip-label">Claude 会话 / 轮次</span><span class="tip-val">${totals.claude.sessions} 会话 / ${totals.claude.turns} 轮</span></div>
+            <div class="tip-row"><span class="tip-label">Claude 输出速率</span><span class="tip-val" style="color:var(--claude-color);">${fmtTps(totals.claude.avgTps)} (峰值 ${fmtTps(totals.claude.peakTps)})</span></div>
             <div class="tip-row"><span class="tip-label">Antigravity 会话 / 轮次</span><span class="tip-val">${totals.antigravity.sessions} 会话 / ${totals.antigravity.turns} 轮</span></div>
+            <div class="tip-row"><span class="tip-label">Antigravity 输出速率</span><span class="tip-val" style="color:var(--agy-color);">${fmtTps(totals.antigravity.avgTps)} (峰值 ${fmtTps(totals.antigravity.peakTps)})</span></div>
             <div class="tip-row tip-total"><span class="tip-label">全平台合计</span><span class="tip-val">${totals.combined.sessions} 会话 / ${totals.combined.turns} 轮</span></div>
           `;
         }
@@ -2372,12 +2580,28 @@
       box.addEventListener('pointerleave', hideTooltip);
     });
 
+    let triedAutoUpgradeBackend = false;
+    let upgradePollRetries = 0;
+
     async function fetchSnapshot() {
       const statusEl = document.getElementById('scan-status');
       statusEl.textContent = 'SYNCING...';
       try {
         const res = await fetch(`/api/snapshot?days=${selectedDays}`);
         currentSnapshot = await res.json();
+        if (currentSnapshot?.engineVersion !== 6) {
+          if (!triedAutoUpgradeBackend) {
+            triedAutoUpgradeBackend = true;
+            statusEl.textContent = 'UPGRADING ENGINE...';
+            await fetch('/api/launch-widget', { method: 'POST' }).catch(() => {});
+          }
+          if (upgradePollRetries < 6) {
+            upgradePollRetries += 1;
+            statusEl.textContent = `UPGRADING (${upgradePollRetries}/6)...`;
+            setTimeout(fetchSnapshot, 800);
+            return;
+          }
+        }
         const tStr = new Date(currentSnapshot.generatedAt).toLocaleTimeString([], { hour12: false });
         statusEl.textContent = `SYNC ${currentSnapshot.scanDurationMs}ms · ${tStr}`;
         renderAll();
@@ -2399,8 +2623,9 @@
         document.getElementById('today-claude-sessions').textContent = `${todayStats.claude.sessions} 会话`;
         document.getElementById('today-claude-cost').textContent = fmtUsd(todayStats.claude.costUsd);
         document.getElementById('today-claude-turns').textContent = `${todayStats.claude.turns.toLocaleString()} 轮`;
+        const tcSpeed = todayStats.claude.avgTps > 0 ? ` · ⚡${todayStats.claude.avgTps} tok/s` : ` · 省 ${fmtUsdShort(todayStats.claude.cacheSavingsUsd)}`;
         document.getElementById('today-claude-sub').textContent =
-          `${fmtTokens(todayStats.claude.totalTokens)} · 省 ${fmtUsdShort(todayStats.claude.cacheSavingsUsd)}`;
+          `${fmtTokens(todayStats.claude.totalTokens)}${tcSpeed}`;
 
         const agyT = todayStats.antigravity;
         document.getElementById('today-agy-sessions').textContent = `${agyT.sessions} 会话`;
@@ -2440,8 +2665,9 @@
 
       document.getElementById('kpi-total-turns').textContent = `${t.turns.toLocaleString()} 轮`;
       document.getElementById('kpi-total-sessions').textContent = `${t.sessions} 会话`;
+      const speedBadge = t.avgTps > 0 ? ` · ⚡ ${t.avgTps} tok/s` : '';
       document.getElementById('kpi-sessions-split').textContent =
-        `Claude ${totals.claude.sessions} 会话 · AGY ${totals.antigravity.sessions} 会话`;
+        `C ${totals.claude.sessions} · A ${totals.antigravity.sessions} 会话${speedBadge}`;
     }
 
     function renderQuotaCards() {
@@ -2835,6 +3061,7 @@
       const plotH = h - padT - padB;
 
       const getVal = (d, plat) => {
+        if (selectedChartMetric === 'tps') return plat === 'claude' ? (d.claudeAvgTps || 0) : (d.agyAvgTps || 0);
         if (selectedChartMetric === 'tokens') return plat === 'claude' ? d.claudeTokens : d.agyTokens;
         if (selectedChartMetric === 'turns') return plat === 'claude' ? d.claudeTurns : d.agyTurns;
         return plat === 'claude' ? d.claudeCostUsd : d.agyCostUsd;
@@ -2844,7 +3071,8 @@
       for (const d of series) {
         const c = selectedPlatform === 'antigravity' ? 0 : getVal(d, 'claude');
         const a = selectedPlatform === 'claude' ? 0 : getVal(d, 'antigravity');
-        if (c + a > maxVal) maxVal = c + a;
+        const dayMax = selectedChartMetric === 'tps' ? Math.max(c, a) : c + a;
+        if (dayMax > maxVal) maxVal = dayMax;
       }
       if (maxVal <= 0) maxVal = 1;
 
@@ -2866,19 +3094,25 @@
         const x = padL + idx * barStep + (barStep - barW) / 2;
         const colX = padL + idx * barStep;
         const yClaude = padT + plotH - cH;
-        const yAgy = yClaude - aH;
+        const yAgy = selectedChartMetric === 'tps' ? (padT + plotH - aH) : (yClaude - aH);
 
         // Subtle background highlight column (visible on hover)
         hoverHighlightsSvg += `
           <rect id="daily-col-hl-${idx}" class="chart-col-hover" x="${colX.toFixed(1)}" y="${padT}" width="${barStep.toFixed(1)}" height="${plotH}" fill="var(--agy-soft)" opacity="0" />
         `;
 
-        // 3D Voxel stacked blocks
-        if (cH > 0) {
-          barsSvg += drawVoxelBlock(x, yClaude, barW, cH, 'var(--claude-color)', 'var(--claude-top)', 'var(--claude-side)', isoDx, isoDy);
-        }
-        if (aH > 0) {
-          barsSvg += drawVoxelBlock(x, yAgy, barW, aH, 'var(--agy-color)', 'var(--agy-top)', 'var(--agy-side)', isoDx, isoDy);
+        // 3D Voxel blocks (side-by-side when metric === 'tps' and both platforms active, otherwise stacked)
+        if (selectedChartMetric === 'tps' && cH > 0 && aH > 0) {
+          const halfW = Math.max(2.5, (barW - 1) / 2);
+          barsSvg += drawVoxelBlock(x, yClaude, halfW, cH, 'var(--claude-color)', 'var(--claude-top)', 'var(--claude-side)', isoDx, isoDy);
+          barsSvg += drawVoxelBlock(x + halfW + 1, yAgy, halfW, aH, 'var(--agy-color)', 'var(--agy-top)', 'var(--agy-side)', isoDx, isoDy);
+        } else {
+          if (cH > 0) {
+            barsSvg += drawVoxelBlock(x, yClaude, barW, cH, 'var(--claude-color)', 'var(--claude-top)', 'var(--claude-side)', isoDx, isoDy);
+          }
+          if (aH > 0) {
+            barsSvg += drawVoxelBlock(x, yAgy, barW, aH, 'var(--agy-color)', 'var(--agy-top)', 'var(--agy-side)', isoDx, isoDy);
+          }
         }
 
         // Full-height invisible interactive hit column covering the entire height of the chart!
@@ -2893,12 +3127,16 @@
       });
 
       const fmtAxis = v => {
+        if (selectedChartMetric === 'tps') return Math.round(v) + '/s';
         if (selectedChartMetric === 'cost') return '$' + (v >= 10 ? Math.round(v) : v.toFixed(1));
         if (selectedChartMetric === 'tokens') return fmtTokens(v);
         return Math.round(v);
       };
 
-      document.getElementById('daily-chart-summary').textContent = `峰值 ${fmtAxis(maxVal)}/日 · ${series.length}天`;
+      document.getElementById('daily-chart-summary').textContent =
+        selectedChartMetric === 'tps'
+          ? `最高均速 ${maxVal.toFixed(1)} tok/s · ${series.length}天`
+          : `峰值 ${fmtAxis(maxVal)}/日 · ${series.length}天`;
 
       container.innerHTML = `
         <svg viewBox="0 0 ${w} ${h}" width="100%" height="100%" role="img" aria-label="每日使用量3D体素趋势图">
@@ -2939,14 +3177,14 @@
               <span class="tip-val">$${d.claudeCostUsd.toFixed(2)} <span style="color:var(--text-secondary);font-size:0.68rem;">(${cPct}%)</span></span>
             </div>
             <div class="tip-row" style="font-size:0.68rem; color:var(--text-secondary); margin-inline-start:1.2rem;">
-              <span>${d.claudeTurns} 轮 · ${fmtTokens(d.claudeTokens)} Tok</span>
+              <span>${d.claudeTurns} 轮 · ${fmtTokens(d.claudeTokens)} Tok${d.claudeAvgTps > 0 ? ` · ⚡${d.claudeAvgTps} tok/s (峰 ${d.claudePeakTps})` : ''}</span>
             </div>
             <div class="tip-row">
               <span class="tip-label">🟦 Antigravity</span>
               <span class="tip-val">$${d.agyCostUsd.toFixed(2)} <span style="color:var(--text-secondary);font-size:0.68rem;">(${aPct}%)</span></span>
             </div>
             <div class="tip-row" style="font-size:0.68rem; color:var(--text-secondary); margin-inline-start:1.2rem;">
-              <span>${d.agyTurns} 轮 · ${fmtTokens(d.agyTokens)} Tok</span>
+              <span>${d.agyTurns} 轮 · ${fmtTokens(d.agyTokens)} Tok${d.agyAvgTps > 0 ? ` · ⚡${d.agyAvgTps} tok/s` : ''}</span>
             </div>
             <div class="tip-ratio-bar">
               <div class="seg-claude" style="width: ${cPct}%;"></div>
@@ -3113,7 +3351,14 @@
       modelsTbody.innerHTML =
         models
           .map(
-            m => `
+            m => {
+              const tpsTitle = m.avgTps > 0
+                ? `平均: ${m.avgTps} tok/s | 峰值: ${m.peakTps} tok/s${m.avgThinkingTps > 0 ? ` | 思考: ${m.avgThinkingTps} tok/s` : ''} (${m.timedTurns || 0}轮测速)`
+                : '暂无有效测速轮次';
+              const tpsCell = m.avgTps > 0
+                ? `<span style="font-weight:700;color:var(--text-primary);">${m.avgTps}</span> <span style="font-size:0.62rem;color:var(--text-secondary);">tok/s</span><br/><span style="color:var(--text-secondary);font-size:0.6rem;">峰 ${m.peakTps}${m.avgThinkingTps > 0 ? ` · 思 ${m.avgThinkingTps}` : ''}</span>`
+                : `<span style="color:var(--text-secondary);">--</span>`;
+              return `
         <tr>
           <td style="font-weight: 700;" class="truncate-cell" title="${m.model}">${m.model}</td>
           <td>
@@ -3123,12 +3368,14 @@
           </td>
           <td class="num">${m.turns.toLocaleString()}</td>
           <td class="num">${fmtTokens(m.totalTokens)}</td>
+          <td class="num" style="line-height: 1.18;" title="${tpsTitle}">${tpsCell}</td>
           <td class="num">${m.cacheHitRate}%</td>
           <td class="num" style="font-weight: 700; line-height: 1.2;" title="占总消费 ${m.sharePct}%">${fmtUsd(m.costUsd)}<br/><span style="color:var(--text-secondary);font-size:0.63rem;font-weight:normal;">${m.sharePct}%</span></td>
         </tr>
-      `
+      `;
+            }
           )
-          .join('') || `<tr><td colspan="6" style="text-align:center;color:var(--text-secondary);padding:1.2rem;">${selectedModelScope === 'today' ? '今日暂无模型调用记录' : '暂无模型记录'}</td></tr>`;
+          .join('') || `<tr><td colspan="7" style="text-align:center;color:var(--text-secondary);padding:1.2rem;">${selectedModelScope === 'today' ? '今日暂无模型调用记录' : '暂无模型记录'}</td></tr>`;
 
       const projects = (currentSnapshot.projects || []).filter(p => {
         if (selectedPlatform === 'all') return true;
@@ -3170,6 +3417,10 @@
             const isToday =
               !Number.isNaN(dObj.getTime()) &&
               `${dObj.getFullYear()}-${String(dObj.getMonth() + 1).padStart(2, '0')}-${String(dObj.getDate()).padStart(2, '0')}` === todayDate;
+            const sTpsTitle = s.avgTps > 0
+              ? `平均输出: ${s.avgTps} tok/s | 峰值: ${s.peakTps} tok/s${s.avgThinkingTps > 0 ? ` | 思考速率: ${s.avgThinkingTps} tok/s` : ''}`
+              : '暂无有效测速数据';
+            const sTpsText = s.avgTps > 0 ? `${s.avgTps}<span style="font-size:0.62rem;color:var(--text-secondary);">/s</span>` : '<span style="color:var(--text-secondary);">--</span>';
             return `
         <tr>
           <td style="color: var(--text-secondary);" title="${new Date(s.lastTimestamp).toLocaleString()}">
@@ -3186,16 +3437,184 @@
           <td class="truncate-cell session-project-cell" style="color: var(--text-secondary);" title="${s.projectPath}">${s.projectLabel}</td>
           <td class="num">${s.turnsCount}</td>
           <td class="num">${fmtTokens(s.totalTokens)}</td>
+          <td class="num" title="${sTpsTitle}">${sTpsText}</td>
           <td class="num" style="font-weight: 700;">${fmtUsd(s.costUsd)}</td>
         </tr>
       `;
           })
-          .join('') || `<tr><td colspan="7" style="text-align:center;color:var(--text-secondary);padding:1.2rem;">未找到匹配的会话记录</td></tr>`;
+          .join('') || `<tr><td colspan="8" style="text-align:center;color:var(--text-secondary);padding:1.2rem;">未找到匹配的会话记录</td></tr>`;
 
       document.getElementById('dock-models-count').textContent = models.length;
       document.getElementById('dock-projects-count').textContent = projects.length;
       document.getElementById('dock-sessions-count').textContent = sessions.length;
-      document.getElementById('details-summary-badge').textContent = `${models.length}/${projects.length}/${sessions.length}`;
+      const summaryBadgeEl = document.getElementById('details-summary-badge');
+      if (summaryBadgeEl) summaryBadgeEl.textContent = `${models.length}/${projects.length}/${sessions.length}`;
+    }
+
+    function renderWeeklyBreakdownModal() {
+      if (!currentSnapshot || !currentSnapshot.quotaStatus) return;
+      const { quotaStatus } = currentSnapshot;
+      const poolKey = selectedWeeklyPool || 'claude';
+
+      let poolTitle = '🟧 Claude 7D 周额度每日明细';
+      let planTag = '';
+      let colorVar = 'var(--claude-color)';
+      let sevenDayObj = null;
+      let fiveHourBudget = 0;
+      let sevenDayBudget = 0;
+      let sourceNote = '';
+
+      if (poolKey === 'claude') {
+        const cq = quotaStatus.claude;
+        poolTitle = '🟧 Claude 7天周额度 · 每日消耗与 5 小时窗口统计';
+        planTag = cq.planName;
+        colorVar = 'var(--claude-color)';
+        sevenDayObj = cq.sevenDay;
+        fiveHourBudget = cq.fiveHourBudgetUsd;
+        sevenDayBudget = cq.sevenDayBudgetUsd;
+        sourceNote = cq.quotaSourceLabel || 'Claude 官方周周期对齐';
+      } else if (poolKey === 'agy-gemini') {
+        const aq = quotaStatus.antigravity;
+        poolTitle = '🟦 Antigravity Gemini 原生池 · 每日周额度与 5 小时窗口统计';
+        planTag = aq.planName;
+        colorVar = 'var(--agy-color)';
+        sevenDayObj = aq.sevenDay;
+        fiveHourBudget = aq.fiveHourBudgetUsd;
+        sevenDayBudget = aq.sevenDayBudgetUsd;
+        sourceNote = 'Argon · Pro · 3.8 Flash 原生池';
+      } else if (poolKey === 'agy-tp') {
+        const aq = quotaStatus.antigravity;
+        const tp = aq.thirdParty;
+        poolTitle = '🟪 Antigravity 第三方池 (Claude/GPT) · 每日周额度与 5 小时窗口统计';
+        planTag = tp?.groupName || 'Claude & GPT';
+        colorVar = 'var(--tp-color)';
+        sevenDayObj = tp?.sevenDay;
+        fiveHourBudget = tp?.fiveHourBudgetUsd || 15.6;
+        sevenDayBudget = tp?.sevenDayBudgetUsd || 31.1;
+        sourceNote = tp?.modelsLabel || 'Claude Opus/Sonnet · GPT';
+      }
+
+      const bd = sevenDayObj?.dailyBreakdown;
+      document.getElementById('wb-table-caption').textContent = poolTitle;
+      document.getElementById('wb-plan-tag').textContent = planTag;
+      document.getElementById('wb-source-note').textContent = sourceNote;
+
+      if (!bd) {
+        document.getElementById('wb-days-tbody').innerHTML =
+          `<tr><td colspan="8" style="text-align:center;color:var(--text-secondary);padding:1.4rem;">暂无周额度每日统计数据</td></tr>`;
+        return;
+      }
+
+      document.getElementById('wb-used-pct').textContent = `${bd.totalWeeklyUsedPct}%`;
+      document.getElementById('wb-used-pct').style.color = getBarColor(bd.totalWeeklyUsedPct, colorVar);
+      document.getElementById('wb-rem-pct').textContent = `剩余 ${bd.remainingWeeklyPct}%`;
+
+      document.getElementById('wb-5h-count').textContent = `${bd.totalFiveHourWindowsCount} 个窗口`;
+      document.getElementById('wb-5h-equiv').textContent =
+        `累计折合 ${bd.totalFiveHourEquivalents} 个满载 5h`;
+
+      document.getElementById('wb-active-days').textContent =
+        `${bd.activeDaysCount}/${bd.days.length} 天活跃`;
+      document.getElementById('wb-avg-daily-pct').textContent = `${bd.avgDailyWeeklyPct}% / 日`;
+      document.getElementById('wb-peak-day').textContent = bd.peakDay
+        ? `最高 ${bd.peakDay.shortDate}(${bd.peakDay.weekday}) ${bd.peakDay.weeklyQuotaPct}%`
+        : '本周暂无消耗';
+
+      document.getElementById('wb-total-cost').textContent = fmtUsd(sevenDayObj.costUsd);
+      document.getElementById('wb-budget-info').textContent =
+        `周预算 ~$${sevenDayBudget} (≈${bd.fiveHourToWeeklyRatio}个 5h 满额)`;
+
+      const fmtShortDT = iso => {
+        if (!iso) return '--';
+        const d = new Date(iso);
+        if (Number.isNaN(d.getTime())) return '--';
+        return `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+      };
+      document.getElementById('wb-reset-countdown').textContent = fmtResetCountdown(bd.resetsAt);
+      document.getElementById('wb-cycle-range').textContent =
+        `${fmtShortDT(bd.cycleStartAt)} → ${fmtShortDT(bd.resetsAt)}`;
+      document.getElementById('wb-cycle-turns').textContent =
+        `本周累计 ${sevenDayObj.turns.toLocaleString()} 轮 · ${fmtTokens(sevenDayObj.totalTokens)} Tok`;
+
+      const maxDayWeeklyPct = Math.max(
+        5,
+        ...bd.days.map(d => d.weeklyQuotaPct || 0)
+      );
+
+      const tbody = document.getElementById('wb-days-tbody');
+      tbody.innerHTML = bd.days
+        .map(d => {
+          const barWidth = d.weeklyQuotaPct > 0
+            ? Math.max(3, Math.min(100, (d.weeklyQuotaPct / Math.max(25, maxDayWeeklyPct * 1.15)) * 100))
+            : 0;
+          const barColor = getBarColor(d.weeklyQuotaPct * 2.2, colorVar);
+
+          let winHtml = `<span style="color:var(--text-dim);">0 个窗口</span>`;
+          if (d.fiveHourWindowsCount > 0) {
+            const pills = d.fiveHourWindows
+              .map(
+                w =>
+                  `<span class="wb-win-pill" title="5小时窗口 #${w.windowIndex} (${w.rangeLabel})：当日在此窗口内交互 ${w.turns} 轮，等价 ${fmtUsd(w.costUsd)}，约消耗该 5h 窗口 ${w.fiveHourUsedPct}%">⏱️ ${w.startLabel} (${w.fiveHourUsedPct}%)</span>`
+              )
+              .join('');
+            winHtml = `
+              <div style="display:flex;align-items:center;justify-content:space-between;gap:0.4rem;flex-wrap:wrap;">
+                <div>
+                  <span style="font-weight:800;color:var(--text-primary);">${d.fiveHourWindowsCount} 个 5h 窗口</span>
+                  <span style="font-size:0.65rem;color:var(--text-secondary);margin-inline-start:0.25rem;">(折合 <strong>${d.fiveHourEquivalent}</strong> 个满载 5h)</span>
+                </div>
+                <div style="display:flex;flex-wrap:wrap;">${pills}</div>
+              </div>
+            `;
+          }
+
+          const rowOpacity = d.isFuture ? 'opacity: 0.45;' : d.turns === 0 ? 'opacity: 0.68;' : '';
+          const todayBadge = d.isToday
+            ? `<span class="badge badge-today" style="margin-inline-start:0.3rem;color:var(--today-color);border-color:var(--today-color);">今日</span>`
+            : d.isFuture
+            ? `<span class="badge" style="margin-inline-start:0.3rem;opacity:0.6;">待到来</span>`
+            : '';
+          const sliceBadge = d.cycleSliceNote
+            ? `<div style="font-size:0.6rem;color:var(--text-dim);font-weight:normal;">${d.cycleSliceNote}</div>`
+            : '';
+
+          return `
+            <tr style="${rowOpacity}">
+              <td style="font-weight:700;">
+                <div>${d.date} <span style="color:var(--text-secondary);font-weight:600;">(${d.weekday})</span>${todayBadge}</div>
+                ${sliceBadge}
+              </td>
+              <td>
+                <div class="wb-bar-wrap">
+                  <span style="font-family:var(--font-mono);font-weight:800;min-inline-size:48px;color:${d.weeklyQuotaPct > 0 ? 'var(--text-primary)' : 'var(--text-dim)'};">${d.weeklyQuotaPct}%</span>
+                  <div class="wb-bar-track" title="当日消耗周额度 ${d.weeklyQuotaPct}% (占本周 100% 总额度的比例)">
+                    <div class="wb-bar-fill" style="width:${barWidth}%;background-color:${barColor};"></div>
+                  </div>
+                </div>
+              </td>
+              <td class="num" style="font-weight:700;color:${d.shareOfUsedPct > 0 ? 'var(--text-primary)' : 'var(--text-dim)'};">
+                ${d.shareOfUsedPct}%
+              </td>
+              <td class="num" style="color:var(--text-secondary);">
+                ${d.isFuture ? '--' : `${d.cumulativeWeeklyPct}%`}
+              </td>
+              <td style="white-space:normal;min-inline-size:240px;">
+                ${winHtml}
+              </td>
+              <td class="num">
+                <span style="font-weight:700;">${d.turns.toLocaleString()}</span> 轮
+                <div style="font-size:0.62rem;color:var(--text-secondary);">${fmtTokens(d.totalTokens)}</div>
+              </td>
+              <td class="num">
+                ${d.avgTps > 0 ? `<span style="font-weight:700;">${d.avgTps}</span> <span style="font-size:0.6rem;color:var(--text-secondary);">tok/s</span>` : '<span style="color:var(--text-dim);">--</span>'}
+              </td>
+              <td class="num" style="font-weight:800;">
+                ${fmtUsd(d.costUsd)}
+              </td>
+            </tr>
+          `;
+        })
+        .join('');
     }
 
     function renderAll() {
@@ -3206,6 +3625,7 @@
       renderDailyChart();
       renderHourlyChart();
       renderTables();
+      renderWeeklyBreakdownModal();
     }
 
     // Auto-ResizeObserver for SVG charts & Heatmap
@@ -3661,6 +4081,60 @@
     document.getElementById('btn-close-details').addEventListener('click', () => {
       closeTopLayer(detailsDialog);
     });
+
+    // Weekly Breakdown Modal wiring
+    const weeklyDialog = document.getElementById('weekly-breakdown-dialog');
+    const weeklyHeader = document.getElementById('weekly-breakdown-header');
+    makeDialogDraggable(weeklyDialog, weeklyHeader, 'voxel-weekly-dialog');
+
+    function openWeeklyBreakdown(poolKey) {
+      selectedWeeklyPool = poolKey || 'claude';
+      document.querySelectorAll('#weekly-pool-switcher button').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.weeklyPool === selectedWeeklyPool);
+      });
+      renderWeeklyBreakdownModal();
+      if (!weeklyDialog.open) {
+        weeklyDialog.showModal();
+      }
+    }
+
+    document.querySelectorAll('[data-open-weekly]').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        openWeeklyBreakdown(btn.dataset.openWeekly);
+      });
+    });
+
+    // Clicking the 7D meter boxes also opens the corresponding daily weekly-quota breakdown
+    const boxClaude7d = document.getElementById('box-claude-7d');
+    if (boxClaude7d) boxClaude7d.addEventListener('click', () => openWeeklyBreakdown('claude'));
+    const boxAgyGem7d = document.getElementById('box-agy-gemini-7d');
+    if (boxAgyGem7d) boxAgyGem7d.addEventListener('click', () => openWeeklyBreakdown('agy-gemini'));
+    const boxAgyTp7d = document.getElementById('box-agy-tp-7d');
+    if (boxAgyTp7d) boxAgyTp7d.addEventListener('click', () => openWeeklyBreakdown('agy-tp'));
+
+    document.querySelectorAll('#weekly-pool-switcher button').forEach(btn => {
+      btn.addEventListener('click', () => {
+        selectedWeeklyPool = btn.dataset.weeklyPool;
+        document.querySelectorAll('#weekly-pool-switcher button').forEach(b => {
+          b.classList.toggle('active', b.dataset.weeklyPool === selectedWeeklyPool);
+        });
+        renderWeeklyBreakdownModal();
+      });
+    });
+
+    const btnMaxWeekly = document.getElementById('btn-maximize-weekly');
+    if (btnMaxWeekly) {
+      btnMaxWeekly.addEventListener('click', () => {
+        weeklyDialog.classList.toggle('is-maximized');
+        btnMaxWeekly.textContent = weeklyDialog.classList.contains('is-maximized') ? '🗗' : '🗖';
+      });
+    }
+
+    const btnCloseWeekly = document.getElementById('btn-close-weekly');
+    if (btnCloseWeekly) {
+      btnCloseWeekly.addEventListener('click', () => closeTopLayer(weeklyDialog));
+    }
 
     document.querySelectorAll('[data-days]').forEach(btn => {
       btn.addEventListener('click', () => {

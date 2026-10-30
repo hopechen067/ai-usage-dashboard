@@ -1,15 +1,36 @@
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
-import { exec, spawn } from 'node:child_process';
-import { getDashboardSnapshot, saveUserSettings, saveLiveQuota } from './collector.mjs';
+import { pathToFileURL } from 'node:url';
+import { exec, execSync, spawn } from 'node:child_process';
+import * as initialCollector from './collector.mjs';
 
 const PORT = Number(process.env.PORT || 4321);
 const PUBLIC_DIR = path.resolve(import.meta.dirname, '..', 'public');
+const COLLECTOR_PATH = path.resolve(import.meta.dirname, 'collector.mjs');
+const PRICING_PATH = path.resolve(import.meta.dirname, 'pricing.mjs');
 const HOOK_SCRIPT_PATH = path.resolve(import.meta.dirname, 'hook-receiver.mjs').replace(/\\/g, '/');
 const FLOATING_BALL_SCRIPT = path.resolve(import.meta.dirname, 'floating-ball.ps1');
 const shouldOpenBrowser = process.argv.includes('--open');
 const shouldOpenWidget = process.argv.includes('--widget');
+
+let activeCollector = initialCollector;
+let lastCollectorSig = '';
+try {
+  lastCollectorSig = `${fs.statSync(COLLECTOR_PATH).mtimeMs}:${fs.statSync(PRICING_PATH).mtimeMs}`;
+} catch {}
+
+async function getCollector() {
+  try {
+    const sig = `${fs.statSync(COLLECTOR_PATH).mtimeMs}:${fs.statSync(PRICING_PATH).mtimeMs}`;
+    if (sig !== lastCollectorSig) {
+      lastCollectorSig = sig;
+      const modUrl = `${pathToFileURL(COLLECTOR_PATH).href}?v=${Date.now()}`;
+      activeCollector = await import(modUrl);
+    }
+  } catch {}
+  return activeCollector;
+}
 
 function launchFloatingBall() {
   if (process.platform !== 'win32') {
@@ -85,21 +106,24 @@ const server = http.createServer(async (req, res) => {
       const daysParam = url.searchParams.get('days') || '30';
       const days =
         daysParam === 'all' || daysParam === 'today' ? daysParam : Number(daysParam) || 30;
-      const snapshot = await getDashboardSnapshot({ days });
+      const collector = await getCollector();
+      const snapshot = await collector.getDashboardSnapshot({ days });
       snapshot.hookScriptPath = HOOK_SCRIPT_PATH;
       return sendJson(res, 200, snapshot);
     }
 
     if (req.method === 'POST' && url.pathname === '/api/settings') {
       const body = await readJsonBody(req);
-      const updated = saveUserSettings(body);
+      const collector = await getCollector();
+      const updated = collector.saveUserSettings(body);
       return sendJson(res, 200, { ok: true, settings: updated });
     }
 
     if (req.method === 'POST' && url.pathname === '/api/live-quota') {
       const body = await readJsonBody(req);
       if (!body.platform) return sendJson(res, 400, { error: 'Missing platform' });
-      const updated = saveLiveQuota(body.platform, body);
+      const collector = await getCollector();
+      const updated = collector.saveLiveQuota(body.platform, body);
       return sendJson(res, 200, { ok: true, liveQuota: updated });
     }
 
@@ -137,8 +161,45 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
+let retriedPortReplace = false;
+
+function killProcessOnPort(port) {
+  try {
+    if (process.platform === 'win32') {
+      const out = execSync(`netstat -ano | findstr :${port}`, { encoding: 'utf8', timeout: 3000 });
+      const pids = new Set();
+      for (const line of out.split(/\r?\n/)) {
+        if (/LISTENING/i.test(line)) {
+          const parts = line.trim().split(/\s+/);
+          const pid = Number(parts.at(-1));
+          if (pid && pid !== process.pid) pids.add(pid);
+        }
+      }
+      for (const pid of pids) {
+        try {
+          process.kill(pid);
+        } catch {}
+      }
+      return pids.size > 0;
+    } else {
+      execSync(`lsof -ti tcp:${port} | xargs kill -9`, { stdio: 'ignore', timeout: 3000 });
+      return true;
+    }
+  } catch {
+    return false;
+  }
+}
+
 server.on('error', err => {
   if (err.code === 'EADDRINUSE') {
+    if (!retriedPortReplace && killProcessOnPort(PORT)) {
+      retriedPortReplace = true;
+      console.log(`  检测到旧版后台服务占用端口 ${PORT}，正在自动热替换重启...`);
+      setTimeout(() => {
+        server.listen(PORT, '127.0.0.1');
+      }, 350);
+      return;
+    }
     const url = `http://127.0.0.1:${PORT}`;
     console.log(`================================================================`);
     console.log(`  全局使用量仪表盘服务已在后台运行中！`);
