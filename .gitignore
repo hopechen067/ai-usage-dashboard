@@ -1,0 +1,21 @@
+# Local runtime data, user settings, and parsed session caches (contains personal usage logs/emails)
+data/
+*.db
+*.db-shm
+*.db-wal
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Windows shortcuts & OS files
+*.lnk
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Editor directories
+.vscode/
+.idea/

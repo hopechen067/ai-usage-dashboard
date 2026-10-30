@@ -1,0 +1,3749 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="color-scheme" content="light dark" />
+  <link rel="icon" type="image/x-icon" href="/voxel-orb.ico" />
+  <title>AI USAGE // Google DeepMind Genie Style Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400..800;1,9..40,400..700&family=JetBrains+Mono:wght@500;600;700;800&display=swap" rel="stylesheet" />
+  <script>
+    (() => {
+      const saved = localStorage.getItem('ai-usage-theme');
+      if (saved === 'dark' || saved === 'light') {
+        document.documentElement.dataset.theme = saved;
+      }
+    })();
+  </script>
+  <style>
+    :root {
+      color-scheme: light dark;
+      /* Architectural Matte Tonal Surfaces (Zero Gradient Noise) */
+      --bg-page: light-dark(#f6f7f9, #0b0c0f);
+      --bg-card: light-dark(#ffffff, #12141a);
+      --bg-card-today: light-dark(#ffffff, #12141a);
+      --bg-pod: light-dark(#f3f4f6, #181b22);
+      --bg-pod-hover: light-dark(#eaecef, #1f232c);
+
+      --text-primary: light-dark(#111318, #f1f3f5);
+      --text-secondary: light-dark(#525866, #8e95a2);
+      --text-muted: light-dark(#717885, #5e6470);
+      --text-dim: light-dark(#8a909e, #686f7c);
+
+      /* Structural 1px Hairlines */
+      --voxel-border: light-dark(rgba(17, 19, 24, 0.08), rgba(255, 255, 255, 0.07));
+      --voxel-border-strong: light-dark(rgba(17, 19, 24, 0.16), rgba(255, 255, 255, 0.14));
+      --voxel-edge: light-dark(rgba(17, 19, 24, 0.03), rgba(0, 0, 0, 0.28));
+      --voxel-bevel-top: transparent;
+      --voxel-bevel-bottom: transparent;
+
+      --voxel-today-border: light-dark(rgba(17, 19, 24, 0.08), rgba(255, 255, 255, 0.07));
+      --voxel-today-edge: transparent;
+
+      /* Desaturated Architectural Semantic Accents */
+      --claude-color: light-dark(#c45d3e, #d97757);
+      --claude-top: light-dark(#c45d3e, #d97757);
+      --claude-side: light-dark(#a84c30, #b85f42);
+      --claude-soft: light-dark(rgba(196, 93, 62, 0.09), rgba(217, 119, 87, 0.12));
+
+      --agy-color: light-dark(#2563eb, #5e97f6);
+      --agy-top: light-dark(#2563eb, #5e97f6);
+      --agy-side: light-dark(#1d4ed8, #4278d4);
+      --agy-soft: light-dark(rgba(37, 99, 235, 0.08), rgba(94, 151, 246, 0.12));
+
+      --tp-color: light-dark(#5c6bc0, #8b95c9);
+      --tp-top: light-dark(#5c6bc0, #8b95c9);
+      --tp-side: light-dark(#4956a6, #6e78ad);
+      --tp-soft: light-dark(rgba(92, 107, 192, 0.09), rgba(139, 149, 201, 0.12));
+
+      --today-color: light-dark(#111318, #f1f3f5);
+      --ok-color: light-dark(#18794e, #4e9f6e);
+      --warn-color: light-dark(#b47818, #d49b35);
+      --danger-color: light-dark(#c93b3b, #d95c5c);
+
+      /* Concentric Radius Scale */
+      --r-card: 12px;
+      --r-pod: 8px;
+      --r-ctrl: 6px;
+      --r-tag: 4px;
+
+      --font-sans: 'DM Sans', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'PingFang SC', 'Microsoft YaHei UI', sans-serif;
+      --font-mono: 'JetBrains Mono', 'Cascadia Code', Consolas, monospace;
+    }
+
+    @media (forced-colors: active) {
+      :root {
+        --voxel-border: CanvasText;
+        --voxel-border-strong: Highlight;
+      }
+    }
+
+    :root[data-theme="light"] { color-scheme: light; }
+    :root[data-theme="dark"] { color-scheme: dark; }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html, body {
+      background-color: var(--bg-page);
+      color: var(--text-primary);
+      font-family: var(--font-sans);
+      line-height: 1.4;
+      -webkit-font-smoothing: antialiased;
+      min-block-size: 100dvh;
+    }
+
+    /* Clean Architectural Matte Background (No Gradients) */
+    .voxel-bg {
+      display: none;
+    }
+
+    @media (min-width: 1180px) {
+      html, body {
+        block-size: 100dvh;
+        overflow: hidden;
+      }
+      body {
+        display: flex;
+        flex-direction: column;
+      }
+    }
+
+    /* Architectural Card Surface (12px Outer Radius) */
+    .voxel-panel {
+      position: relative;
+      background-color: var(--bg-card);
+      border: 1px solid var(--voxel-border);
+      border-radius: var(--r-card);
+      box-shadow: 0 1px 3px var(--voxel-edge);
+      transition: border-color 0.16s ease;
+    }
+
+    /* Top Navigation Bar (Aligned 12px Grid) */
+    .topbar {
+      position: relative;
+      z-index: 10;
+      flex-shrink: 0;
+      margin: 0.75rem 0.9rem 0;
+      padding: 0.5rem 0.9rem;
+      border-radius: var(--r-card);
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      gap: 0.6rem;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+    }
+
+    .voxel-logo {
+      inline-size: 1.75rem;
+      block-size: 1.75rem;
+      display: grid;
+      place-items: center;
+      flex-shrink: 0;
+      border-radius: var(--r-ctrl);
+      background-color: var(--bg-pod);
+      border: 1px solid var(--voxel-border);
+      color: var(--text-primary);
+    }
+
+    .brand-title-row {
+      display: flex;
+      align-items: center;
+      gap: 0.55rem;
+    }
+
+    .brand h1 {
+      font-size: 0.9rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: var(--text-primary);
+    }
+
+    .pixel-tag {
+      font-family: var(--font-mono);
+      font-size: 0.64rem;
+      font-weight: 600;
+      padding: 0.12rem 0.45rem;
+      border-radius: var(--r-tag);
+      background-color: var(--bg-pod);
+      border: 1px solid var(--voxel-border);
+      color: var(--text-secondary);
+    }
+
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.38rem;
+    }
+
+    /* Crisp 6px Control Buttons (Zero Gradients) */
+    .btn, .select-input, .search-input {
+      background-color: var(--bg-pod);
+      color: var(--text-primary);
+      border: 1px solid var(--voxel-border);
+      border-radius: var(--r-ctrl);
+      padding: 0.28rem 0.68rem;
+      font-size: 0.73rem;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      user-select: none;
+      transition: background-color 0.14s ease, border-color 0.14s ease;
+    }
+
+    .btn:hover, .select-input:hover {
+      background-color: var(--bg-pod-hover);
+      border-color: var(--voxel-border-strong);
+    }
+
+    .btn:active {
+      transform: translateY(0.5px);
+    }
+
+    .btn-voxel-accent {
+      background-color: var(--bg-pod);
+      border-color: var(--voxel-border-strong);
+      display: inline-flex;
+      align-items: center;
+      gap: 0.36rem;
+    }
+
+    .btn-voxel-accent:hover {
+      background-color: var(--bg-pod-hover);
+      border-color: var(--text-secondary);
+    }
+
+    .btn-primary {
+      background-color: var(--text-primary);
+      color: var(--bg-card);
+      border-color: var(--text-primary);
+    }
+
+    .btn-primary:hover {
+      background-color: var(--text-primary);
+      opacity: 0.9;
+      border-color: var(--text-primary);
+    }
+
+    /* Concentric Segmented Control (6px outer, 2px pad, 4px inner) */
+    .segmented {
+      display: inline-flex;
+      background-color: var(--bg-pod);
+      border: 1px solid var(--voxel-border);
+      border-radius: var(--r-ctrl);
+      padding: 2px;
+      gap: 2px;
+    }
+
+    .segmented button {
+      background: transparent;
+      border: 1px solid transparent;
+      color: var(--text-secondary);
+      padding: 0.18rem 0.56rem;
+      font-size: 0.71rem;
+      font-weight: 600;
+      border-radius: var(--r-tag);
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background-color 0.14s ease, color 0.14s ease;
+    }
+
+    .segmented button:hover {
+      color: var(--text-primary);
+    }
+
+    .segmented button.active {
+      background-color: var(--bg-card);
+      color: var(--text-primary);
+      border-color: var(--voxel-border);
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+    }
+
+    /* Semantic Minimal Dot Indicator */
+    .dot {
+      display: inline-block;
+      inline-size: 6px;
+      block-size: 6px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .dot-today { background-color: var(--ok-color); }
+    .dot-claude { background-color: var(--claude-color); }
+    .dot-agy { background-color: var(--agy-color); }
+    .dot-tp { background-color: var(--tp-color); }
+    .dot-neutral { background-color: var(--text-muted); }
+
+    /* Main 3-Layer Cockpit */
+    .cockpit-main {
+      position: relative;
+      z-index: 5;
+      flex: 1;
+      min-block-size: 0;
+      padding: 0.55rem 0.9rem 0.7rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.55rem;
+    }
+
+    /* Layer 1: 6 Architectural KPI Cards */
+    .kpi-strip {
+      flex-shrink: 0;
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 0.55rem;
+    }
+
+    @media (max-width: 1179px) {
+      .kpi-strip {
+        grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      }
+    }
+
+    .kpi-card {
+      background-color: var(--bg-card);
+      border: 1px solid var(--voxel-border);
+      border-radius: var(--r-card);
+      box-shadow: 0 1px 3px var(--voxel-edge);
+      padding: 0.6rem 0.8rem;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      gap: 0.22rem;
+      min-inline-size: 0;
+      cursor: default;
+      transition: border-color 0.16s ease;
+    }
+
+    .kpi-card:hover {
+      border-color: var(--voxel-border-strong);
+    }
+
+    .kpi-card.is-today {
+      background-color: var(--bg-card);
+      border-color: var(--voxel-border);
+    }
+
+    .kpi-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 0.35rem;
+      font-size: 0.72rem;
+      color: var(--text-secondary);
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .kpi-top-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.38rem;
+      min-inline-size: 0;
+    }
+
+    .kpi-tag {
+      font-family: var(--font-mono);
+      font-size: 0.62rem;
+      padding: 0.06rem 0.4rem;
+      border-radius: var(--r-tag);
+      font-weight: 600;
+      background-color: var(--bg-pod);
+      border: 1px solid var(--voxel-border);
+      color: var(--text-secondary);
+    }
+
+    .kpi-tag.tag-today {
+      color: var(--text-secondary);
+      border-color: var(--voxel-border);
+      background-color: var(--bg-pod);
+    }
+
+    .kpi-value-row {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 0.35rem;
+      margin-block: 0.06rem;
+    }
+
+    .kpi-value {
+      font-family: var(--font-mono);
+      font-size: 1.32rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      font-variant-numeric: tabular-nums;
+      letter-spacing: -0.03em;
+      white-space: nowrap;
+    }
+
+    .kpi-value-sub {
+      font-family: var(--font-mono);
+      font-size: 0.71rem;
+      font-weight: 600;
+      color: var(--text-secondary);
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+
+    .kpi-sub {
+      font-family: var(--font-mono);
+      font-size: 0.67rem;
+      color: var(--text-dim);
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* Layer 2: Main Split Cockpit Body (Left Quota Column vs Right Charts Column) */
+    .cockpit-body {
+      flex: 1;
+      min-block-size: 0;
+      display: flex;
+      align-items: stretch;
+      gap: 0;
+      position: relative;
+    }
+
+    @media (max-width: 1079px) {
+      .cockpit-body {
+        flex-direction: column;
+        overflow-y: auto;
+      }
+    }
+
+    /* Left Quota Column: 3 Stacked Cards (Claude, Gemini, ThirdParty) */
+    .quota-column {
+      flex: 5;
+      min-inline-size: 340px;
+      display: flex;
+      flex-direction: column;
+      gap: 0.55rem;
+      min-block-size: 0;
+      overflow-y: auto;
+      scrollbar-width: thin;
+      padding-inline-end: 0.2rem;
+    }
+
+    .quota-card {
+      padding: 0.56rem 0.82rem;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-start;
+      gap: 0.4rem;
+      min-inline-size: 0;
+      position: relative;
+      overflow: hidden;
+      flex: 0 0 auto;
+    }
+
+    .quota-bars-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.48rem;
+    }
+
+    #card-quota-claude {
+      flex: 0 0 auto;
+    }
+
+    #card-quota-agy {
+      flex: 0 0 auto;
+    }
+
+    #card-daily-heatmap {
+      flex: 1 1 auto;
+      justify-content: space-between;
+      min-block-size: 165px;
+    }
+
+    /* Pool Subgroups inside unified Antigravity card */
+    .pool-subgroup {
+      display: flex;
+      flex-direction: column;
+      gap: 0.28rem;
+    }
+
+    .pool-subgroup-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 0.69rem;
+      padding-inline: 0.2rem;
+      color: var(--text-secondary);
+      border-bottom: 1px solid var(--voxel-border);
+      padding-bottom: 0.2rem;
+    }
+
+    .pool-subgroup-name {
+      font-weight: 600;
+      color: var(--text-primary);
+      letter-spacing: 0.01em;
+    }
+
+    .pool-subgroup-models {
+      font-family: var(--font-mono);
+      font-size: 0.62rem;
+      color: var(--text-dim);
+    }
+
+    /* Activity Heatmap Desaturated Slate-Blue Spectrum */
+    :root {
+      --act-heat-0: #161920;
+      --act-heat-1: #1f3458;
+      --act-heat-2: #2d5394;
+      --act-heat-3: #4476cc;
+      --act-heat-4: #5e97f6;
+      --act-tile-border: rgba(255, 255, 255, 0.04);
+    }
+
+    [data-theme="light"] {
+      --act-heat-0: #ebedf0;
+      --act-heat-1: #c6d9f7;
+      --act-heat-2: #8cb4f2;
+      --act-heat-3: #4f87e8;
+      --act-heat-4: #2563eb;
+      --act-tile-border: rgba(15, 23, 42, 0.05);
+    }
+
+    .activity-calendar-wrapper {
+      flex: 1;
+      min-block-size: 0;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0.4rem 0.5rem;
+      border-radius: var(--r-pod);
+      background: var(--bg-pod);
+      border: 1px solid var(--voxel-border);
+    }
+
+    .activity-calendar-svg-box {
+      inline-size: 100%;
+      block-size: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .activity-calendar-svg {
+      display: block;
+      inline-size: 100%;
+      block-size: auto;
+      max-block-size: 100%;
+      overflow: visible;
+    }
+
+    .act-month-text {
+      font-family: var(--font-sans);
+      font-size: 10.5px;
+      fill: var(--text-secondary);
+      font-weight: 600;
+    }
+
+    .act-day-text {
+      font-family: var(--font-sans);
+      font-size: 9.5px;
+      fill: var(--text-dim);
+      font-weight: 500;
+    }
+
+    .act-tile {
+      stroke: var(--act-tile-border);
+      stroke-width: 0.8px;
+      cursor: pointer;
+      transition: filter 0.12s ease;
+    }
+
+    .act-tile.lvl-0 { fill: var(--act-heat-0); }
+    .act-tile.lvl-1 { fill: var(--act-heat-1); }
+    .act-tile.lvl-2 { fill: var(--act-heat-2); }
+    .act-tile.lvl-3 { fill: var(--act-heat-3); }
+    .act-tile.lvl-4 { fill: var(--act-heat-4); }
+
+    .act-tile:hover {
+      filter: brightness(1.2);
+      stroke: var(--text-primary);
+      stroke-width: 1px;
+    }
+
+    /* 4 Summary Stats below the grid (compact single-row strip) */
+    .activity-stats-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 0.4rem;
+      padding: 0.25rem 0.05rem 0.05rem 0.05rem;
+    }
+
+    .activity-stat-box {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 0.25rem;
+      background: var(--bg-pod);
+      border: 1px solid var(--voxel-border);
+      border-radius: var(--r-ctrl);
+      padding: 0.24rem 0.5rem;
+      min-inline-size: 0;
+    }
+
+    .act-stat-label {
+      font-size: 0.62rem;
+      color: var(--text-secondary);
+      white-space: nowrap;
+    }
+
+    .act-stat-value {
+      font-family: var(--font-mono);
+      font-size: 0.68rem;
+      font-weight: 600;
+      color: var(--text-primary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .activity-legend {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      background: var(--bg-pod);
+      border: 1px solid var(--voxel-border);
+      padding: 0.12rem 0.46rem;
+      border-radius: var(--r-tag);
+    }
+
+    .act-legend-text {
+      color: var(--text-dim);
+      font-size: 0.6rem;
+      font-family: var(--font-sans);
+    }
+
+    .act-legend-tile {
+      inline-size: 8px;
+      block-size: 8px;
+      border-radius: 2px;
+      border: 0.8px solid var(--act-tile-border);
+    }
+
+    .act-legend-tile.lvl-0 { background: var(--act-heat-0); }
+    .act-legend-tile.lvl-1 { background: var(--act-heat-1); }
+    .act-legend-tile.lvl-2 { background: var(--act-heat-2); }
+    .act-legend-tile.lvl-3 { background: var(--act-heat-3); }
+    .act-legend-tile.lvl-4 { background: var(--act-heat-4); }
+
+    /* Right Charts Column: 2 Stacked Cards (Top: Daily, Bottom: 24h) */
+    .charts-column {
+      flex: 7;
+      min-inline-size: 380px;
+      display: flex;
+      flex-direction: column;
+      min-block-size: 0;
+      position: relative;
+    }
+
+    .chart-card {
+      padding: 0.65rem 0.85rem;
+      display: flex;
+      flex-direction: column;
+      min-inline-size: 0;
+      min-block-size: 0;
+      position: relative;
+      overflow: hidden;
+      flex: 1;
+    }
+
+    .live-tag {
+      font-size: 0.61rem;
+      padding: 0.08rem 0.42rem;
+      border-color: var(--voxel-border);
+      color: var(--ok-color);
+      background-color: var(--bg-pod);
+    }
+
+    /* Drag Handle on Panel Header */
+    .panel-drag-handle {
+      cursor: grab;
+      user-select: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      color: var(--text-muted);
+      font-size: 0.8rem;
+      line-height: 1;
+      padding: 0.12rem 0.26rem;
+      border-radius: var(--r-tag);
+      transition: color 0.14s ease, background-color 0.14s ease;
+    }
+    .panel-drag-handle:hover {
+      color: var(--text-primary);
+      background-color: var(--bg-pod);
+    }
+    .panel-drag-handle:active {
+      cursor: grabbing;
+    }
+
+    /* Card Dragging and Drop Targets */
+    .quota-card.is-dragging,
+    .chart-card.is-dragging {
+      opacity: 0.45;
+      border: 1.5px dashed var(--agy-color) !important;
+      transform: scale(0.985);
+    }
+
+    .quota-card.is-dragover,
+    .chart-card.is-dragover {
+      outline: 2px dashed var(--agy-color) !important;
+      outline-offset: -2px;
+      background-color: var(--bg-pod-hover) !important;
+    }
+
+    /* Column Swapped Order (Left/Right) */
+    .cockpit-body.cols-swapped .charts-column { order: 1; }
+    .cockpit-body.cols-swapped #splitter-main-col { order: 2; }
+    .cockpit-body.cols-swapped .quota-column { order: 3; }
+    .cockpit-body:not(.cols-swapped) .quota-column { order: 1; }
+    .cockpit-body:not(.cols-swapped) #splitter-main-col { order: 2; }
+    .cockpit-body:not(.cols-swapped) .charts-column { order: 3; }
+
+    /* Chart Vertical Swapped Order (Top/Bottom) */
+    .charts-column.charts-swapped #card-chart-hourly { order: 1; }
+    .charts-column.charts-swapped #splitter-charts-row { order: 2; }
+    .charts-column.charts-swapped #card-chart-daily { order: 3; }
+    .charts-column:not(.charts-swapped) #card-chart-daily { order: 1; }
+    .charts-column:not(.charts-swapped) #splitter-charts-row { order: 2; }
+    .charts-column:not(.charts-swapped) #card-chart-hourly { order: 3; }
+
+    /* Interactive Vertical Column Resizer */
+    .voxel-splitter-col {
+      inline-size: 12px;
+      margin-inline: -1px;
+      cursor: col-resize;
+      display: grid;
+      place-items: center;
+      z-index: 8;
+      flex-shrink: 0;
+      position: relative;
+      user-select: none;
+    }
+    .voxel-splitter-col::before {
+      content: '';
+      inline-size: 3px;
+      block-size: 32px;
+      border-radius: 2px;
+      background-color: var(--voxel-border-strong);
+      transition: background-color 0.15s ease, block-size 0.15s ease;
+    }
+    .voxel-splitter-col:hover::before,
+    .voxel-splitter-col.active::before {
+      background-color: var(--text-secondary);
+      block-size: 44px;
+    }
+
+    /* Interactive Horizontal Row Resizer */
+    .voxel-splitter-row {
+      block-size: 10px;
+      margin-block: -1px;
+      cursor: row-resize;
+      display: grid;
+      place-items: center;
+      z-index: 8;
+      flex-shrink: 0;
+      position: relative;
+      user-select: none;
+    }
+    .voxel-splitter-row::before {
+      content: '';
+      block-size: 3px;
+      inline-size: 40px;
+      border-radius: 2px;
+      background-color: var(--voxel-border-strong);
+      transition: background-color 0.15s ease, inline-size 0.15s ease;
+    }
+    .voxel-splitter-row:hover::before,
+    .voxel-splitter-row.active::before {
+      background-color: var(--text-secondary);
+      inline-size: 56px;
+    }
+
+    /* Corner Resize Grip */
+    .voxel-resize-grip {
+      position: absolute;
+      inset-inline-end: 6px;
+      inset-block-end: 6px;
+      inline-size: 14px;
+      block-size: 14px;
+      cursor: nwse-resize;
+      opacity: 0.4;
+      user-select: none;
+      display: grid;
+      place-items: center;
+      transition: opacity 0.15s ease;
+    }
+    .voxel-resize-grip:hover {
+      opacity: 1;
+    }
+    .voxel-resize-grip svg {
+      inline-size: 10px;
+      block-size: 10px;
+      fill: var(--text-secondary);
+    }
+
+    .quota-card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 0.35rem;
+      flex-wrap: nowrap;
+      min-inline-size: 0;
+    }
+
+    .platform-title {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      font-size: 0.82rem;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      white-space: nowrap;
+      min-inline-size: 0;
+    }
+
+    .quota-header-right {
+      display: flex;
+      align-items: center;
+      gap: 0.32rem;
+      flex-wrap: nowrap;
+      min-inline-size: 0;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 0.08rem 0.44rem;
+      border-radius: var(--r-tag);
+      font-size: 0.62rem;
+      font-weight: 600;
+      font-family: var(--font-mono);
+      white-space: nowrap;
+      border: 1px solid color-mix(in oklab, currentColor, transparent 74%);
+    }
+    .badge-claude { background-color: var(--claude-soft); color: var(--claude-color); }
+    .badge-agy { background-color: var(--agy-soft); color: var(--agy-color); }
+    .badge-tp { background-color: var(--tp-soft); color: var(--tp-color); }
+    .badge-today { background-color: var(--bg-pod); color: var(--text-secondary); }
+
+    .roi-pill {
+      font-family: var(--font-mono);
+      font-size: 0.63rem;
+      font-weight: 600;
+      padding: 0.08rem 0.44rem;
+      border-radius: var(--r-tag);
+      background-color: var(--bg-pod);
+      border: 1px solid var(--voxel-border);
+      color: var(--text-secondary);
+      white-space: nowrap;
+    }
+
+    /* Compact Quota Subgrids */
+    .quota-bars-claude {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.5rem;
+    }
+
+    .quota-bars-agy {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 0.48rem;
+    }
+
+    @media (max-width: 1400px) {
+      .quota-bars-agy {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    .meter-box {
+      background-color: var(--bg-pod);
+      border: 1px solid var(--voxel-border);
+      border-radius: var(--r-pod);
+      padding: 0.5rem 0.68rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.34rem;
+      min-inline-size: 0;
+      cursor: pointer;
+      transition: background-color 0.15s ease, border-color 0.15s ease;
+    }
+    .meter-box:hover {
+      background-color: var(--bg-pod-hover);
+      border-color: var(--voxel-border-strong);
+    }
+
+    .meter-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 0.25rem;
+      white-space: nowrap;
+    }
+
+    .meter-title {
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: var(--text-secondary);
+      display: inline-flex;
+      align-items: center;
+      gap: 0.28rem;
+    }
+
+    .meter-pct {
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: var(--text-primary);
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* Precision Segmented Energy Track */
+    .voxel-bar-track {
+      display: grid;
+      grid-template-columns: repeat(16, 1fr);
+      gap: 2px;
+      block-size: 0.42rem;
+      padding: 0;
+      background-color: transparent;
+      border: none;
+      border-radius: 2px;
+      overflow: hidden;
+    }
+
+    .voxel-cell {
+      border-radius: 1.5px;
+      background-color: light-dark(rgba(17, 19, 24, 0.08), rgba(255, 255, 255, 0.08));
+      transition: background-color 0.16s ease;
+    }
+
+    .voxel-cell.on {
+      box-shadow: none;
+    }
+
+    .meter-meta {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 0.25rem;
+      font-family: var(--font-mono);
+      font-size: 0.65rem;
+      color: var(--text-dim);
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+
+    .meter-reset-tag {
+      color: var(--text-secondary);
+      font-weight: 600;
+      background-color: var(--bg-card);
+      padding: 0.04rem 0.38rem;
+      border-radius: var(--r-tag);
+      border: 1px solid var(--voxel-border);
+    }
+
+    /* Section Headers */
+
+    .section-header {
+      flex-shrink: 0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 0.5rem;
+      margin-block-end: 0.4rem;
+    }
+
+    .section-title {
+      font-size: 0.82rem;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      white-space: nowrap;
+    }
+
+    .chart-meta-pill {
+      font-family: var(--font-mono);
+      font-size: 0.65rem;
+      font-weight: 600;
+      color: var(--text-secondary);
+      background-color: var(--bg-pod);
+      border: 1px solid var(--voxel-border);
+      padding: 0.12rem 0.5rem;
+      border-radius: var(--r-tag);
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+    }
+
+    .chart-stage {
+      inline-size: 100%;
+      flex: 1;
+      min-block-size: 110px;
+      background-color: var(--bg-pod);
+      border: 1px solid var(--voxel-border);
+      border-radius: var(--r-pod);
+      padding: 0.35rem 0.5rem;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .chart-stage svg {
+      display: block;
+      cursor: crosshair;
+    }
+
+    /* Bottom Action Dock (Aligned 12px Card Radius) */
+    .voxel-dock {
+      flex-shrink: 0;
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.44rem 0.9rem;
+      border-radius: var(--r-card);
+    }
+
+    .dock-hint {
+      font-size: 0.72rem;
+      color: var(--text-secondary);
+      font-weight: 500;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
+    .dock-actions {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.38rem;
+    }
+
+    /* Clean Architectural Floating Tooltip */
+    .voxel-tooltip {
+      position: fixed;
+      z-index: 9999999;
+      pointer-events: none;
+      opacity: 0;
+      visibility: hidden;
+      transform: translateY(3px);
+      transition: opacity 0.08s ease, transform 0.08s ease;
+      background: var(--bg-card);
+      border: 1px solid var(--voxel-border-strong);
+      border-radius: var(--r-card);
+      box-shadow: 0 12px 32px -6px rgba(0, 0, 0, 0.45);
+      padding: 0.7rem 0.88rem;
+      font-size: 0.75rem;
+      min-inline-size: 256px;
+      max-inline-size: 370px;
+      line-height: 1.46;
+    }
+
+    .voxel-tooltip.visible {
+      opacity: 1;
+      visibility: visible;
+      transform: translateY(0) scale(1);
+    }
+
+    .voxel-tooltip .tip-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-block-end: 1px solid var(--voxel-border);
+      padding-block-end: 0.38rem;
+      margin-block-end: 0.42rem;
+      font-weight: 700;
+      font-size: 0.8rem;
+      color: var(--text-primary);
+    }
+
+    .voxel-tooltip .tip-badge {
+      font-family: var(--font-mono);
+      font-size: 0.68rem;
+      font-weight: 700;
+      padding: 0.06rem 0.38rem;
+      border-radius: 3px;
+      border: 1px solid currentColor;
+    }
+
+    .voxel-tooltip .tip-ratio-bar {
+      display: flex;
+      block-size: 6px;
+      border-radius: 3px;
+      overflow: hidden;
+      background-color: rgba(148, 163, 184, 0.25);
+      margin-block: 0.4rem;
+      box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.2);
+    }
+    .voxel-tooltip .tip-ratio-bar .seg-claude {
+      background-color: var(--claude-color);
+      block-size: 100%;
+      transition: width 0.15s ease;
+    }
+    .voxel-tooltip .tip-ratio-bar .seg-agy {
+      background-color: var(--agy-color);
+      block-size: 100%;
+      transition: width 0.15s ease;
+    }
+
+    .voxel-tooltip .tip-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 0.75rem;
+      font-family: var(--font-mono);
+      font-size: 0.74rem;
+      padding-block: 0.14rem;
+    }
+
+    .voxel-tooltip .tip-row .tip-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      color: var(--text-secondary);
+      font-family: var(--font-sans);
+      font-weight: 600;
+    }
+
+    .voxel-tooltip .tip-row .tip-val {
+      font-weight: 800;
+      color: var(--text-primary);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .voxel-tooltip .tip-total {
+      border-block-start: 1px dashed var(--voxel-border-strong);
+      margin-block-start: 0.35rem;
+      padding-block-start: 0.32rem;
+      font-weight: 800;
+    }
+
+    /* Chart SVG Hit Column & Hover Highlight */
+    .chart-hit-column {
+      cursor: crosshair;
+      pointer-events: all;
+    }
+    .chart-col-hover {
+      pointer-events: none;
+      transition: opacity 0.08s ease;
+    }
+
+    /* Tables inside Details Modal */
+    .table-scroll {
+      flex: 1;
+      min-block-size: 0;
+      overflow-y: auto;
+      overflow-x: auto;
+      scrollbar-width: thin;
+    }
+
+    table {
+      inline-size: 100%;
+      border-collapse: collapse;
+      font-size: 0.75rem;
+    }
+
+    caption {
+      position: absolute;
+      inline-size: 1px;
+      block-size: 1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+    }
+
+    thead th {
+      position: sticky;
+      inset-block-start: 0;
+      z-index: 2;
+      background-color: var(--bg-card);
+      text-align: start;
+      font-weight: 800;
+      color: var(--text-secondary);
+      padding: 0.42rem 0.5rem;
+      border-block-end: 2px solid var(--voxel-border);
+      white-space: nowrap;
+      font-size: 0.71rem;
+    }
+
+    tbody td {
+      padding: 0.4rem 0.5rem;
+      border-block-end: 1px solid var(--voxel-border);
+      vertical-align: middle;
+      white-space: nowrap;
+    }
+
+    tbody tr:hover {
+      background-color: var(--bg-pod-hover);
+    }
+
+    th.num, td.num {
+      text-align: end;
+      font-variant-numeric: tabular-nums;
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+    }
+
+    .truncate-cell {
+      max-inline-size: 200px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    /* Native Modal Dialogs (Google DeepMind Glassmorphic Windowed Mode) */
+    dialog {
+      margin: auto;
+      background-color: var(--bg-card);
+      backdrop-filter: blur(24px) saturate(150%);
+      -webkit-backdrop-filter: blur(24px) saturate(150%);
+      color: var(--text-primary);
+      border: 1px solid var(--voxel-border-strong);
+      border-radius: 24px;
+      padding: 1.2rem 1.4rem;
+      box-shadow:
+        0 24px 64px -12px rgba(0, 0, 0, 0.55),
+        inset 0 1px 0 var(--voxel-bevel-top);
+      opacity: 0;
+      transform: scale(0.95) translateY(8px);
+      transition-property: opacity, transform, display, overlay;
+      transition-duration: 0.22s;
+      transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+      transition-behavior: allow-discrete;
+      resize: both;
+      overflow: hidden;
+      min-inline-size: 460px;
+      min-block-size: 320px;
+    }
+
+    dialog:modal {
+      overscroll-behavior: contain;
+    }
+
+    dialog::backdrop {
+      background-color: rgba(6, 9, 19, 0);
+      backdrop-filter: blur(0px);
+      overflow: hidden;
+      overscroll-behavior: contain;
+      transition-property: background-color, backdrop-filter, display, overlay;
+      transition-duration: 0.22s;
+      transition-timing-function: ease-out;
+      transition-behavior: allow-discrete;
+    }
+
+    :is(dialog[open]):where(:not([data-closing])) {
+      opacity: 1;
+      transform: scale(1) translateY(0);
+
+      @starting-style {
+        opacity: 0;
+        transform: scale(0.95) translateY(8px);
+      }
+
+      &::backdrop {
+        background-color: rgba(6, 9, 19, 0.65);
+        backdrop-filter: blur(6px);
+
+        @starting-style {
+          background-color: rgba(6, 9, 19, 0);
+          backdrop-filter: blur(0px);
+        }
+      }
+    }
+
+    dialog.is-maximized {
+      inline-size: 98vw !important;
+      block-size: 96dvh !important;
+      max-inline-size: 98vw !important;
+      max-block-size: 96dvh !important;
+      inset: 2dvh 1vw !important;
+      margin: 0 !important;
+      transform: none !important;
+      resize: none !important;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      dialog {
+        transform: none;
+        transition-duration: 0.1s;
+      }
+      @starting-style {
+        dialog[open] {
+          transform: none;
+        }
+      }
+    }
+
+    #settings-dialog {
+      inline-size: min(92vw, 540px);
+    }
+
+    #details-dialog {
+      inline-size: min(96vw, 1500px);
+      block-size: min(88dvh, 860px);
+      min-inline-size: min(96vw, 760px);
+      min-block-size: min(85dvh, 480px);
+      container-type: inline-size;
+      container-name: detailsModal;
+    }
+
+    #details-dialog[open] {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .dialog-header {
+      flex-shrink: 0;
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      gap: 0.65rem;
+      margin-block-end: 0.8rem;
+      padding-block-end: 0.6rem;
+      border-block-end: 1px solid var(--voxel-border);
+      cursor: grab;
+      user-select: none;
+    }
+    .dialog-header:active {
+      cursor: grabbing;
+    }
+
+    .dialog-header h2 {
+      font-size: 1rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* 12-Column Grid Utility Classes */
+    .col-1 { grid-column: span 1; }
+    .col-2 { grid-column: span 2; }
+    .col-3 { grid-column: span 3; }
+    .col-4 { grid-column: span 4; }
+    .col-5 { grid-column: span 5; }
+    .col-6 { grid-column: span 6; }
+    .col-7 { grid-column: span 7; }
+    .col-8 { grid-column: span 8; }
+    .col-9 { grid-column: span 9; }
+    .col-10 { grid-column: span 10; }
+    .col-11 { grid-column: span 11; }
+    .col-12 { grid-column: span 12; }
+
+    .details-modal-grid {
+      flex: 1;
+      min-block-size: 0;
+      display: grid;
+      grid-template-columns: repeat(12, minmax(0, 1fr));
+      gap: 0.75rem;
+    }
+
+    /* 3-Table View (✨ 三表同屏) Default Grid Spans */
+    .details-modal-grid[data-active-tab="all"] .detail-panel[data-panel="models"] {
+      grid-column: span 4;
+    }
+    .details-modal-grid[data-active-tab="all"] .detail-panel[data-panel="projects"] {
+      grid-column: span 3;
+    }
+    .details-modal-grid[data-active-tab="all"] .detail-panel[data-panel="sessions"] {
+      grid-column: span 5;
+    }
+
+    /* Single Tab Views (Full Width & Height) */
+    .details-modal-grid:not([data-active-tab="all"]) {
+      grid-template-columns: 1fr;
+      grid-template-rows: 1fr;
+    }
+
+    .details-modal-grid[data-active-tab="models"] .detail-panel:not([data-panel="models"]),
+    .details-modal-grid[data-active-tab="projects"] .detail-panel:not([data-panel="projects"]),
+    .details-modal-grid[data-active-tab="sessions"] .detail-panel:not([data-panel="sessions"]) {
+      display: none;
+    }
+
+    .details-modal-grid[data-active-tab="models"] .detail-panel[data-panel="models"],
+    .details-modal-grid[data-active-tab="projects"] .detail-panel[data-panel="projects"],
+    .details-modal-grid[data-active-tab="sessions"] .detail-panel[data-panel="sessions"] {
+      grid-column: 1 / -1;
+      grid-row: 1 / -1;
+    }
+
+    /* Responsive Adaptation for 3-Table View when dialog is narrower than 1200px */
+    @container detailsModal (max-width: 1200px) {
+      .details-modal-grid[data-active-tab="all"] {
+        grid-template-columns: 1fr 1fr;
+        grid-template-rows: minmax(0, 1fr) minmax(0, 1.25fr);
+      }
+      .details-modal-grid[data-active-tab="all"] .detail-panel[data-panel="models"] {
+        grid-column: 1;
+        grid-row: 1;
+      }
+      .details-modal-grid[data-active-tab="all"] .detail-panel[data-panel="projects"] {
+        grid-column: 2;
+        grid-row: 1;
+      }
+      .details-modal-grid[data-active-tab="all"] .detail-panel[data-panel="sessions"] {
+        grid-column: 1 / -1;
+        grid-row: 2;
+      }
+      .detail-panel[data-panel="models"] .truncate-cell {
+        max-inline-size: 160px;
+      }
+      .detail-panel[data-panel="projects"] .truncate-cell {
+        max-inline-size: 160px;
+      }
+      .detail-panel[data-panel="sessions"] .truncate-cell {
+        max-inline-size: 320px;
+      }
+      .detail-panel[data-panel="sessions"] .session-project-cell {
+        max-inline-size: 150px !important;
+      }
+    }
+
+    @container detailsModal (max-width: 680px) {
+      .details-modal-grid[data-active-tab="all"] {
+        grid-template-columns: 1fr;
+        grid-template-rows: repeat(3, minmax(0, 1fr));
+      }
+      .details-modal-grid[data-active-tab="all"] .detail-panel {
+        grid-column: 1 / -1 !important;
+        grid-row: auto !important;
+      }
+    }
+
+    /* Media query fallback for viewport-based responsive */
+    @media (max-width: 1200px) {
+      .details-modal-grid[data-active-tab="all"] {
+        grid-template-columns: 1fr 1fr;
+        grid-template-rows: minmax(0, 1fr) minmax(0, 1.25fr);
+      }
+      .details-modal-grid[data-active-tab="all"] .detail-panel[data-panel="models"] {
+        grid-column: 1;
+        grid-row: 1;
+      }
+      .details-modal-grid[data-active-tab="all"] .detail-panel[data-panel="projects"] {
+        grid-column: 2;
+        grid-row: 1;
+      }
+      .details-modal-grid[data-active-tab="all"] .detail-panel[data-panel="sessions"] {
+        grid-column: 1 / -1;
+        grid-row: 2;
+      }
+      .detail-panel[data-panel="models"] .truncate-cell {
+        max-inline-size: 160px;
+      }
+      .detail-panel[data-panel="projects"] .truncate-cell {
+        max-inline-size: 160px;
+      }
+      .detail-panel[data-panel="sessions"] .truncate-cell {
+        max-inline-size: 320px;
+      }
+      .detail-panel[data-panel="sessions"] .session-project-cell {
+        max-inline-size: 150px !important;
+      }
+    }
+
+    @media (max-width: 680px) {
+      .details-modal-grid[data-active-tab="all"] {
+        grid-template-columns: 1fr;
+        grid-template-rows: repeat(3, minmax(0, 1fr));
+      }
+      .details-modal-grid[data-active-tab="all"] .detail-panel {
+        grid-column: 1 / -1 !important;
+        grid-row: auto !important;
+      }
+    }
+
+    .detail-panel {
+      background-color: var(--bg-pod);
+      border: 1px solid var(--voxel-border);
+      border-radius: 16px;
+      padding: 0.75rem 0.8rem;
+      display: flex;
+      flex-direction: column;
+      min-inline-size: 0;
+      min-block-size: 0;
+    }
+
+    .detail-panel .section-header {
+      min-block-size: 30px;
+      align-items: center;
+      margin-block-end: 0.5rem;
+      gap: 0.45rem;
+    }
+
+    .detail-panel thead th {
+      background-color: var(--bg-pod);
+      border-block-end: 1.5px solid var(--voxel-border);
+      padding: 0.38rem 0.36rem;
+      font-size: 0.70rem;
+    }
+
+    .detail-panel tbody td {
+      padding: 0.38rem 0.36rem;
+      font-size: 0.72rem;
+    }
+
+    /* Contextual cell truncation to keep tables neat and aligned */
+    .detail-panel[data-panel="models"] .truncate-cell {
+      max-inline-size: 105px;
+    }
+
+    .detail-panel[data-panel="projects"] .truncate-cell {
+      max-inline-size: 115px;
+    }
+
+    .detail-panel[data-panel="sessions"] .truncate-cell {
+      max-inline-size: 130px;
+    }
+
+    .detail-panel[data-panel="sessions"] .session-project-cell {
+      max-inline-size: 80px !important;
+    }
+
+    .details-modal-grid:not([data-active-tab="all"]) .truncate-cell,
+    .details-modal-grid:not([data-active-tab="all"]) .session-project-cell {
+      max-inline-size: 500px !important;
+    }
+
+    .form-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 0.8rem;
+    }
+
+    .form-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.6rem;
+      align-items: center;
+      font-size: 0.82rem;
+      font-weight: 600;
+    }
+
+    pre.code-box {
+      background-color: var(--bg-pod);
+      border: 1px solid var(--voxel-border);
+      border-radius: 12px;
+      padding: 0.65rem;
+      font-size: 0.73rem;
+      font-family: var(--font-mono);
+      overflow-x: auto;
+      user-select: all;
+    }
+  </style>
+</head>
+<body>
+  <div class="voxel-bg" aria-hidden="true"></div>
+
+  <!-- Global High-Speed Tooltip -->
+  <div id="voxel-tooltip" class="voxel-tooltip" aria-hidden="true"></div>
+
+  <!-- Top Google DeepMind Console Bar -->
+  <header class="topbar voxel-panel">
+    <div class="brand">
+      <div class="voxel-logo" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="16" height="16">
+          <path d="M12 2.5 C12.45 8.1 15.9 11.55 21.5 12 C15.9 12.45 12.45 15.9 12 21.5 C11.55 15.9 8.1 12.45 2.5 12 C8.1 11.55 11.55 8.1 12 2.5 Z" fill="currentColor" />
+        </svg>
+      </div>
+      <div class="brand-title-row">
+        <h1>DeepMind // AI Usage</h1>
+        <span class="pixel-tag" id="scan-status">SYNC...</span>
+      </div>
+    </div>
+
+    <div class="controls">
+      <div class="segmented" role="group" aria-label="时间范围过滤">
+        <button type="button" data-days="today">今日</button>
+        <button type="button" data-days="7">7天</button>
+        <button type="button" data-days="30" class="active">30天</button>
+        <button type="button" data-days="90">90天</button>
+        <button type="button" data-days="all">全部</button>
+      </div>
+
+      <div class="segmented" role="group" aria-label="平台过滤">
+        <button type="button" data-platform="all" class="active">全部</button>
+        <button type="button" data-platform="claude">Claude</button>
+        <button type="button" data-platform="antigravity">AGY</button>
+      </div>
+
+      <!-- Layout Mode Presets -->
+      <div class="segmented" id="layout-mode-toggle" role="group" aria-label="看板自定义视窗布局">
+        <button type="button" data-layout="standard" class="active" title="标准布局：配额与图表均衡视窗">标准</button>
+        <button type="button" data-layout="charts-focus" title="图表大窗模式：极简配额，图表大视野">大图</button>
+        <button type="button" data-layout="quota-focus" title="配额聚焦模式：配额卡片展开">配额</button>
+      </div>
+
+      <button type="button" class="btn" id="btn-swap-rows" title="上下对调：图表置顶 / 配额置顶">对调</button>
+      <button type="button" class="btn btn-voxel-accent" id="btn-open-details" data-open-detail="all">
+        明细仓库 <span class="badge badge-agy" id="details-summary-badge">3表</span>
+      </button>
+      <button type="button" class="btn" id="btn-launch-widget" title="启动或呼出 Windows 桌面置顶实时监控悬浮球">任务栏组件</button>
+      <button type="button" class="btn" id="btn-reset-layout" title="恢复默认视窗大小、顺序与分割条布局">重置</button>
+      <button type="button" class="btn" id="btn-open-settings">套餐</button>
+      <button type="button" class="btn" id="btn-theme-toggle" aria-label="切换明暗主题">主题</button>
+      <button type="button" class="btn btn-primary" id="btn-refresh">刷新</button>
+    </div>
+  </header>
+
+  <!-- Main 3-Layer Cockpit -->
+  <main class="cockpit-main" id="cockpit-main">
+    <!-- Layer 1: 6 Architectural KPI Cards -->
+    <section class="kpi-strip" aria-label="今日实时与周期核心指标">
+      <div class="kpi-card is-today" data-tip-key="kpi-today-total">
+        <div class="kpi-top">
+          <span class="kpi-top-label"><span class="dot dot-today"></span>今日总消耗</span>
+          <span class="kpi-tag tag-today" id="today-date-badge">今日</span>
+        </div>
+        <div class="kpi-value-row">
+          <div class="kpi-value" id="today-total-cost">$0.00</div>
+          <div class="kpi-value-sub" id="today-total-turns">0 轮</div>
+        </div>
+        <div class="kpi-sub" id="today-total-sub">0 Tok · C $0.00 / A $0.00</div>
+      </div>
+
+      <div class="kpi-card is-today" data-tip-key="kpi-today-claude">
+        <div class="kpi-top">
+          <span class="kpi-top-label"><span class="dot dot-claude"></span>今日 Claude</span>
+          <span class="kpi-tag tag-today" id="today-claude-sessions">0 会话</span>
+        </div>
+        <div class="kpi-value-row">
+          <div class="kpi-value" id="today-claude-cost">$0.00</div>
+          <div class="kpi-value-sub" id="today-claude-turns">0 轮</div>
+        </div>
+        <div class="kpi-sub" id="today-claude-sub">0 Tok · 省 $0.00</div>
+      </div>
+
+      <div class="kpi-card is-today" data-tip-key="kpi-today-agy">
+        <div class="kpi-top">
+          <span class="kpi-top-label"><span class="dot dot-agy"></span>今日 Antigravity</span>
+          <span class="kpi-tag tag-today" id="today-agy-sessions">0 会话</span>
+        </div>
+        <div class="kpi-value-row">
+          <div class="kpi-value" id="today-agy-cost">$0.00</div>
+          <div class="kpi-value-sub" id="today-agy-turns">0 轮</div>
+        </div>
+        <div class="kpi-sub" id="today-agy-sub">Gem 0轮 · 3P 0轮</div>
+      </div>
+
+      <div class="kpi-card" data-tip-key="kpi-tokens">
+        <div class="kpi-top">
+          <span class="kpi-top-label"><span class="dot dot-neutral"></span>周期 Token</span>
+          <span class="kpi-tag" id="period-label-1">30天</span>
+        </div>
+        <div class="kpi-value-row">
+          <div class="kpi-value" id="kpi-total-tokens">--</div>
+          <div class="kpi-value-sub" id="kpi-cache-rate">命中 --%</div>
+        </div>
+        <div class="kpi-sub" id="kpi-tokens-breakdown">入 -- · 缓 -- · 出 --</div>
+      </div>
+
+      <div class="kpi-card" data-tip-key="kpi-cost">
+        <div class="kpi-top">
+          <span class="kpi-top-label"><span class="dot dot-neutral"></span>等价 API 价值</span>
+          <span class="kpi-tag" id="period-label-2">USD</span>
+        </div>
+        <div class="kpi-value-row">
+          <div class="kpi-value" id="kpi-total-cost">--</div>
+          <div class="kpi-value-sub" id="kpi-cache-savings">省 $--</div>
+        </div>
+        <div class="kpi-sub" id="kpi-cost-split">Claude $-- · AGY $--</div>
+      </div>
+
+      <div class="kpi-card" data-tip-key="kpi-sessions">
+        <div class="kpi-top">
+          <span class="kpi-top-label"><span class="dot dot-neutral"></span>会话 &amp; 轮次</span>
+          <span class="kpi-tag">全平台</span>
+        </div>
+        <div class="kpi-value-row">
+          <div class="kpi-value" id="kpi-total-turns">-- 轮</div>
+          <div class="kpi-value-sub" id="kpi-total-sessions">-- 会话</div>
+        </div>
+        <div class="kpi-sub" id="kpi-sessions-split">Claude -- · AGY --</div>
+      </div>
+    </section>
+
+    <!-- Layer 2: Split Cockpit Body (Left Quota Column vs Right Charts Column) -->
+    <div class="cockpit-body" id="cockpit-body">
+      <!-- Left Column: 3 Stacked Quota Decks (Claude, Antigravity, ThirdParty) -->
+      <section class="quota-column" id="quota-column" aria-label="套餐配额与周期能量舱">
+        <!-- 1. Claude Code -->
+        <article class="voxel-panel quota-card" id="card-quota-claude">
+          <div class="quota-card-header">
+            <div class="platform-title">
+              <span class="panel-drag-handle">⠿</span>
+              <span class="dot dot-claude"></span>
+              <span>Claude Code</span>
+              <span class="badge badge-claude" id="claude-plan-badge">Pro $20</span>
+              <span class="pixel-tag live-tag">LIVE</span>
+            </div>
+            <div class="quota-header-right">
+              <span class="roi-pill" id="claude-30d-inline">30d: $0.00 (0轮)</span>
+              <span class="roi-pill" id="claude-roi-badge" style="color: var(--ok-color);">ROI --%</span>
+            </div>
+          </div>
+
+          <div class="pool-subgroup">
+            <div class="pool-subgroup-title">
+              <span class="pool-subgroup-name">官方周期配额 (5H &amp; 7D)</span>
+              <span class="pool-subgroup-models">Opus 4.6 · Sonnet 4.6 · Haiku</span>
+            </div>
+            <div class="quota-bars-grid">
+              <div class="meter-box" id="box-claude-5h" data-quota-pool="claude-5h">
+                <div class="meter-top">
+                  <span class="meter-title">5H 窗口</span>
+                  <span class="meter-pct" id="claude-5h-pct">已用 0% · 剩 100%</span>
+                </div>
+                <div class="voxel-bar-track" id="claude-5h-bar"></div>
+                <div class="meter-meta">
+                  <span id="claude-5h-detail">0轮 · 0 Tok · $0/$0</span>
+                  <span class="meter-reset-tag" id="claude-5h-reset">无消耗</span>
+                </div>
+              </div>
+
+              <div class="meter-box" id="box-claude-7d" data-quota-pool="claude-7d">
+                <div class="meter-top">
+                  <span class="meter-title">7D 周度</span>
+                  <span class="meter-pct" id="claude-7d-pct">已用 0% · 剩 100%</span>
+                </div>
+                <div class="voxel-bar-track" id="claude-7d-bar"></div>
+                <div class="meter-meta">
+                  <span id="claude-7d-detail">0轮 · 0 Tok · $0/$0</span>
+                  <span class="meter-reset-tag" id="claude-30d-summary">无消耗</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <!-- 2. Google Antigravity (Gemini 原生 & 第三方模型池) -->
+        <article class="voxel-panel quota-card" id="card-quota-agy">
+          <div class="quota-card-header">
+            <div class="platform-title">
+              <span class="panel-drag-handle">⠿</span>
+              <span class="dot dot-agy"></span>
+              <span>Google Antigravity</span>
+              <span class="badge badge-agy" id="agy-plan-badge">Ultra 5x</span>
+              <span class="pixel-tag live-tag">LIVE</span>
+            </div>
+            <div class="quota-header-right">
+              <span class="roi-pill" id="agy-30d-inline">30d: $0.00 (0轮)</span>
+              <span class="roi-pill" id="agy-roi-badge" style="color: var(--ok-color);">ROI --%</span>
+            </div>
+          </div>
+
+          <!-- Section A: Gemini 原生模型池 -->
+          <div class="pool-subgroup">
+            <div class="pool-subgroup-title">
+              <span class="pool-subgroup-name">Gemini 原生模型池</span>
+              <span class="pool-subgroup-models">Argon · Pro · 3.8 Flash</span>
+            </div>
+            <div class="quota-bars-grid">
+              <div class="meter-box" id="box-agy-gemini-5h" data-quota-pool="agy-gemini-5h">
+                <div class="meter-top">
+                  <span class="meter-title">Gem 5H</span>
+                  <span class="meter-pct" id="agy-5h-pct">0% · 剩 100%</span>
+                </div>
+                <div class="voxel-bar-track" id="agy-5h-bar"></div>
+                <div class="meter-meta">
+                  <span id="agy-5h-detail">0轮 · $0/$0</span>
+                  <span class="meter-reset-tag" id="agy-5h-reset">无消耗</span>
+                </div>
+              </div>
+
+              <div class="meter-box" id="box-agy-gemini-7d" data-quota-pool="agy-gemini-7d">
+                <div class="meter-top">
+                  <span class="meter-title">Gem 7D</span>
+                  <span class="meter-pct" id="agy-7d-pct">0% · 剩 100%</span>
+                </div>
+                <div class="voxel-bar-track" id="agy-7d-bar"></div>
+                <div class="meter-meta">
+                  <span id="agy-7d-detail">0轮 · $0/$0</span>
+                  <span class="meter-reset-tag" id="agy-30d-summary">无消耗</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Section B: 第三方模型池 (Claude & GPT) -->
+          <div class="pool-subgroup">
+            <div class="pool-subgroup-title">
+              <span class="pool-subgroup-name">第三方模型池 (Claude &amp; GPT)</span>
+              <span class="roi-pill" id="tp-30d-inline" style="font-size: 0.6rem; padding: 1px 6px;">7D: $0.00</span>
+            </div>
+            <div class="quota-bars-grid">
+              <div class="meter-box" id="box-agy-tp-5h" data-quota-pool="agy-tp-5h">
+                <div class="meter-top">
+                  <span class="meter-title">3P 5H</span>
+                  <span class="meter-pct" id="agy-tp-5h-pct">0% · 剩 100%</span>
+                </div>
+                <div class="voxel-bar-track" id="agy-tp-5h-bar"></div>
+                <div class="meter-meta">
+                  <span id="agy-tp-5h-detail">0轮 · $0/$0</span>
+                  <span class="meter-reset-tag" id="agy-tp-5h-reset">无消耗</span>
+                </div>
+              </div>
+
+              <div class="meter-box" id="box-agy-tp-7d" data-quota-pool="agy-tp-7d">
+                <div class="meter-top">
+                  <span class="meter-title">3P 7D</span>
+                  <span class="meter-pct" id="agy-tp-7d-pct">0% · 剩 100%</span>
+                </div>
+                <div class="voxel-bar-track" id="agy-tp-7d-bar"></div>
+                <div class="meter-meta">
+                  <span id="agy-tp-7d-detail">0轮 · $0/$0</span>
+                  <span class="meter-reset-tag" id="agy-tp-7d-reset">无消耗</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <!-- 3. 年度用量活跃度热力图 (GitHub / Activity Calendar Style) -->
+        <article class="voxel-panel quota-card" id="card-daily-heatmap">
+          <div class="quota-card-header">
+            <div class="platform-title">
+              <span class="panel-drag-handle">⠿</span>
+              <span>年度用量活跃度 (Activity Calendar)</span>
+            </div>
+            <div class="quota-header-right">
+              <div class="activity-legend">
+                <span class="act-legend-text">Less</span>
+                <span class="act-legend-tile lvl-0"></span>
+                <span class="act-legend-tile lvl-1"></span>
+                <span class="act-legend-tile lvl-2"></span>
+                <span class="act-legend-tile lvl-3"></span>
+                <span class="act-legend-tile lvl-4"></span>
+                <span class="act-legend-text">More</span>
+              </div>
+              <span class="roi-pill" id="heatmap-year-pill">52 周 · 365 天</span>
+            </div>
+          </div>
+
+          <div class="activity-calendar-wrapper" id="heatmap-scroll-wrapper">
+            <div id="daily-heatmap-container" class="activity-calendar-svg-box">
+              <!-- Dynamically populated 52-week SVG Heatmap -->
+            </div>
+          </div>
+
+          <!-- 4 Key Summary Stats (Compact single-row strip) -->
+          <div class="activity-stats-grid">
+            <div class="activity-stat-box">
+              <div class="act-stat-label">Most active month</div>
+              <div class="act-stat-value" id="act-most-active-month">--</div>
+            </div>
+            <div class="activity-stat-box">
+              <div class="act-stat-label">Most active day</div>
+              <div class="act-stat-value" id="act-most-active-day">--</div>
+            </div>
+            <div class="activity-stat-box">
+              <div class="act-stat-label">Longest streak</div>
+              <div class="act-stat-value" id="act-longest-streak">--</div>
+            </div>
+            <div class="activity-stat-box">
+              <div class="act-stat-label">Current streak</div>
+              <div class="act-stat-value" id="act-current-streak">--</div>
+            </div>
+          </div>
+        </article>
+      </section>
+
+      <!-- Vertical Resizer Splitter between Left Quota Column & Right Charts Column -->
+      <div class="voxel-splitter-col" id="splitter-main-col" title="左右拖动调整左右栏宽度"></div>
+
+      <!-- Right Column: 2 Stacked DeepMind Telemetry Charts (Top: Daily, Bottom: 24h) -->
+      <section class="charts-column" id="charts-column" aria-label="每日消耗趋势与时段分布">
+        <!-- Top Right: Daily Chart -->
+        <article class="voxel-panel chart-card" id="card-chart-daily">
+          <div class="section-header">
+            <div style="display: flex; align-items: center; gap: 0.4rem;">
+              <span class="panel-drag-handle">⠿</span>
+              <h2 class="section-title">每日消耗趋势 (Claude vs AGY)</h2>
+            </div>
+            <div style="display: flex; align-items: center; gap: 0.45rem;">
+              <span class="chart-meta-pill" id="daily-chart-summary">--</span>
+              <div class="segmented" id="chart-metric-toggle">
+                <button type="button" data-metric="cost" class="active">额度($)</button>
+                <button type="button" data-metric="tokens">Token</button>
+                <button type="button" data-metric="turns">轮次</button>
+              </div>
+            </div>
+          </div>
+          <div class="chart-stage" id="daily-chart-container"></div>
+        </article>
+
+        <!-- Horizontal Resizer Splitter between Daily Chart & Hourly Chart -->
+        <div class="voxel-splitter-row" id="splitter-charts-row" title="上下拖动调整两图高度"></div>
+
+        <!-- Bottom Right: 24h Hourly Chart -->
+        <article class="voxel-panel chart-card" id="card-chart-hourly">
+          <div class="section-header">
+            <div style="display: flex; align-items: center; gap: 0.4rem;">
+              <span class="panel-drag-handle">⠿</span>
+              <h2 class="section-title">24h 时段活跃分布 (本地时间)</h2>
+            </div>
+            <div style="display: flex; align-items: center; gap: 0.45rem;">
+              <span class="chart-meta-pill" id="hourly-chart-summary">--</span>
+              <span class="chart-meta-pill"><span class="dot dot-claude"></span>Claude <span class="dot dot-agy" style="margin-left:4px;"></span>AGY</span>
+            </div>
+          </div>
+          <div class="chart-stage" id="hourly-chart-container"></div>
+        </article>
+      </section>
+    </div>
+
+    <!-- Bottom DeepMind Action Dock -->
+    <footer class="voxel-panel voxel-dock" aria-label="明细数据快捷入口">
+      <div class="dock-hint">
+        <span>DEEPMIND TELEMETRY // 支持拖拽把手 ⠿ 与分割线自由调整视窗比例</span>
+      </div>
+      <div class="dock-actions">
+        <button type="button" class="btn btn-voxel-accent" data-open-detail="all">
+          三表同屏总览
+        </button>
+        <button type="button" class="btn" data-open-detail="models">
+          模型明细 (<span id="dock-models-count">0</span>)
+        </button>
+        <button type="button" class="btn" data-open-detail="projects">
+          工作区排行 (<span id="dock-projects-count">0</span>)
+        </button>
+        <button type="button" class="btn" data-open-detail="sessions">
+          活跃会话 (<span id="dock-sessions-count">0</span>)
+        </button>
+      </div>
+    </footer>
+  </main>
+
+  <!-- Native Modal Dialog for Image 2 Detailed Breakdown Tables (Windowed Draggable & Resizable) -->
+  <dialog id="details-dialog" closedby="any" aria-labelledby="details-dialog-title">
+    <div class="dialog-header" id="details-dialog-header">
+      <h2 id="details-dialog-title">📦 模型、工作区与最近活跃会话明细 (可拖拽标题栏)</h2>
+      <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem;">
+        <div class="segmented" id="detail-tab-switcher" role="group" aria-label="明细视图切换">
+          <button type="button" data-detail-tab="all" class="active">✨ 三表同屏</button>
+          <button type="button" data-detail-tab="models">🤖 模型消耗明细</button>
+          <button type="button" data-detail-tab="projects">📁 工作区消耗排行</button>
+          <button type="button" data-detail-tab="sessions">💬 最近活跃会话</button>
+        </div>
+        <button type="button" class="btn" id="btn-maximize-details" title="最大化 / 还原窗口">🗖</button>
+        <button type="button" class="btn" id="btn-close-details" aria-label="关闭明细弹窗">✕</button>
+      </div>
+    </div>
+
+    <div class="details-modal-grid" id="details-modal-grid" data-active-tab="all">
+      <div class="detail-panel col-4" data-panel="models">
+        <div class="section-header">
+          <h3 class="section-title" id="models-table-caption">🤖 模型消耗明细</h3>
+          <div class="segmented" id="model-scope-toggle">
+            <button type="button" data-scope="period" class="active">所选周期</button>
+            <button type="button" data-scope="today">🌞 仅看今日</button>
+          </div>
+        </div>
+        <div class="table-scroll" tabindex="0" role="region" aria-labelledby="models-table-caption">
+          <table>
+            <caption>模型 Token 与等价费用明细表</caption>
+            <thead>
+              <tr>
+                <th>模型名称</th>
+                <th>平台</th>
+                <th class="num">轮次</th>
+                <th class="num">总 Token</th>
+                <th class="num">命中</th>
+                <th class="num">等价价值</th>
+              </tr>
+            </thead>
+            <tbody id="models-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="detail-panel col-3" data-panel="projects">
+        <div class="section-header">
+          <h3 class="section-title" id="projects-table-caption">📁 工作区消耗排行</h3>
+          <span style="font-size: 0.72rem; color: var(--text-secondary);" id="projects-count-label">--</span>
+        </div>
+        <div class="table-scroll" tabindex="0" role="region" aria-labelledby="projects-table-caption">
+          <table>
+            <caption>工作区项目消耗排行榜</caption>
+            <thead>
+              <tr>
+                <th>项目 / 工作区</th>
+                <th class="num">会话/轮次</th>
+                <th class="num">总 Token</th>
+                <th class="num">等价费用</th>
+              </tr>
+            </thead>
+            <tbody id="projects-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="detail-panel col-5" data-panel="sessions">
+        <div class="section-header">
+          <h3 class="section-title" id="sessions-table-caption">💬 最近活跃会话明细</h3>
+          <input
+            type="search"
+            id="session-search"
+            class="search-input"
+            placeholder="搜索标题 / 项目 / 模型..."
+            aria-label="搜索会话"
+            style="min-inline-size: 130px; max-inline-size: 220px; flex: 1; padding: 0.2rem 0.5rem; font-size: 0.73rem;"
+          />
+        </div>
+        <div class="table-scroll" tabindex="0" role="region" aria-labelledby="sessions-table-caption">
+          <table>
+            <caption>最近活跃 AI 会话任务列表</caption>
+            <thead>
+              <tr>
+                <th>时间</th>
+                <th>平台</th>
+                <th>任务标题</th>
+                <th>工作区</th>
+                <th class="num">轮次</th>
+                <th class="num">总 Token</th>
+                <th class="num">等价费用</th>
+              </tr>
+            </thead>
+            <tbody id="sessions-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    <div class="voxel-resize-grip" title="按住并拖动右下角调整弹窗大小">
+      <svg viewBox="0 0 10 10">
+        <path d="M8 2 L2 8 M9 5 L5 9 M9 8 L8 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none" />
+      </svg>
+    </div>
+  </dialog>
+
+  <!-- Native Modal Dialog for Subscription Settings (Draggable) -->
+  <dialog id="settings-dialog" closedby="any" aria-labelledby="dialog-title">
+    <div class="dialog-header" id="settings-dialog-header">
+      <h2 id="dialog-title">⚙️ 订阅套餐档位与实时配额校准</h2>
+      <button type="button" class="btn" id="btn-close-dialog" aria-label="关闭套餐配置弹窗">✕</button>
+    </div>
+    <form id="settings-form" class="form-grid">
+      <div class="form-row">
+        <label for="select-claude-plan">Claude 订阅套餐档位</label>
+        <select id="select-claude-plan" class="select-input">
+          <option value="pro">Claude Pro ($20/月)</option>
+          <option value="max5x">Claude Max 5x ($100/月)</option>
+          <option value="max20x">Claude Max 20x ($200/月)</option>
+        </select>
+      </div>
+
+      <div class="form-row">
+        <label for="select-agy-plan">Antigravity 订阅套餐档位</label>
+        <select id="select-agy-plan" class="select-input">
+          <option value="pro">Google AI Pro ($20/月)</option>
+          <option value="ultra5x">Gemini Ultra 5x (g1-ultra-lite)</option>
+          <option value="ultra">Google AI Ultra 20x ($250/月)</option>
+        </select>
+      </div>
+
+      <div style="border-block-start: 2px solid var(--voxel-border); padding-block-start: 0.65rem;">
+        <div style="font-weight: 700; font-size: 0.8rem; margin-block-end: 0.25rem;">
+          🔌 Claude Code StatusLine 实时配额钩子 (可选增强)
+        </div>
+        <p style="font-size: 0.74rem; color: var(--text-secondary); margin-block-end: 0.4rem;">
+          仪表盘已自动直连 Claude Desktop <code>plan-usage-history.json</code> 与 Antigravity <code>LanguageServer</code>；如需 CLI 推送，可加入 <code>~/.claude/settings.json</code>：
+        </p>
+        <pre class="code-box" id="snippet-claude-statusline"></pre>
+      </div>
+
+      <div style="display: flex; justify-content: flex-end; gap: 0.5rem; margin-block-start: 0.3rem;">
+        <button type="button" class="btn" id="btn-cancel-settings">取消</button>
+        <button type="submit" class="btn btn-primary">保存配置</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script>
+    let currentSnapshot = null;
+    let selectedDays = '30';
+    let selectedPlatform = 'all';
+    let selectedChartMetric = 'cost';
+    let selectedModelScope = 'period';
+
+    const fmtTokens = n => {
+      const val = Number(n || 0);
+      if (val >= 1_000_000_000) return (val / 1_000_000_000).toFixed(2) + 'B';
+      if (val >= 1_000_000) return (val / 1_000_000).toFixed(2) + 'M';
+      if (val >= 1_000) return (val / 1_000).toFixed(1) + 'K';
+      return String(val);
+    };
+
+    const fmtUsd = n => '$' + Number(n || 0).toFixed(2);
+    const fmtUsdShort = n => {
+      const val = Number(n || 0);
+      if (val >= 100) return '$' + Math.round(val);
+      if (val >= 10) return '$' + val.toFixed(1);
+      return '$' + val.toFixed(2);
+    };
+
+    const fmtRelativeTime = iso => {
+      if (!iso) return '--';
+      const diffMs = Date.now() - Date.parse(iso);
+      const mins = Math.floor(diffMs / 60000);
+      if (mins < 1) return '刚刚';
+      if (mins < 60) return `${mins}分前`;
+      const hrs = Math.floor(mins / 60);
+      if (hrs < 24) return `${hrs}h前`;
+      const days = Math.floor(hrs / 24);
+      return `${days}天前`;
+    };
+
+    const fmtResetCountdown = iso => {
+      if (!iso) return '待机';
+      const remainMs = Date.parse(iso) - Date.now();
+      if (remainMs <= 0) return '重置中';
+      const totalMins = Math.ceil(remainMs / 60000);
+      const days = Math.floor(totalMins / (60 * 24));
+      const hrs = Math.floor((totalMins % (60 * 24)) / 60);
+      const mins = totalMins % 60;
+      if (days > 0) return `⏳ ${days}d ${hrs}h`;
+      if (hrs > 0) return `⏳ ${hrs}h ${mins}m`;
+      return `⏳ ${mins}m`;
+    };
+
+    function getBarColor(pct, defaultVar) {
+      if (pct >= 85) return 'var(--danger-color)';
+      if (pct >= 65) return 'var(--warn-color)';
+      return defaultVar;
+    }
+
+    function renderVoxelBar(elId, pct, defaultColorVar) {
+      const el = document.getElementById(elId);
+      if (!el) return;
+      const totalCells = 16;
+      const clamped = Math.max(0, Math.min(100, Number(pct || 0)));
+      const litCount = clamped <= 0 ? 0 : Math.max(1, Math.round((clamped / 100) * totalCells));
+      const color = getBarColor(clamped, defaultColorVar);
+      let html = '';
+      for (let i = 0; i < totalCells; i++) {
+        if (i < litCount) {
+          html += `<span class="voxel-cell on" style="background-color: ${color};"></span>`;
+        } else {
+          html += `<span class="voxel-cell"></span>`;
+        }
+      }
+      el.innerHTML = html;
+    }
+
+    // High-Speed Voxel Tooltip Engine
+    const tooltipEl = document.getElementById('voxel-tooltip');
+
+    function showTooltip(html, e) {
+      if (!tooltipEl) return;
+      tooltipEl.innerHTML = html;
+      tooltipEl.classList.add('visible');
+      updateTooltipPos(e);
+    }
+
+    function updateTooltipPos(e) {
+      if (!tooltipEl || !tooltipEl.classList.contains('visible')) return;
+      const rect = tooltipEl.getBoundingClientRect();
+      const tipW = rect.width || 280;
+      const tipH = rect.height || 140;
+      let x = e.clientX + 16;
+      let y = e.clientY + 12;
+
+      // Smart boundary detection
+      if (x + tipW > window.innerWidth - 12) {
+        x = e.clientX - tipW - 16;
+      }
+      if (y + tipH > window.innerHeight - 12) {
+        y = e.clientY - tipH - 12;
+      }
+      if (x < 10) x = 10;
+      if (y < 10) y = 10;
+
+      tooltipEl.style.left = `${Math.round(x)}px`;
+      tooltipEl.style.top = `${Math.round(y)}px`;
+    }
+
+    function hideTooltip() {
+      if (tooltipEl) tooltipEl.classList.remove('visible');
+    }
+
+    // Attach tooltips to KPI Cards
+    document.querySelectorAll('.kpi-card[data-tip-key]').forEach(card => {
+      card.addEventListener('pointerenter', e => {
+        if (!currentSnapshot) return;
+        const key = card.dataset.tipKey;
+        const { todayStats, totals } = currentSnapshot;
+        let html = '';
+        if (key === 'kpi-today-total' && todayStats) {
+          html = `
+            <div class="tip-header"><span>🌞 今日实时消耗总览</span><span>${todayStats.date}</span></div>
+            <div class="tip-row"><span class="tip-label">🟧 Claude 消耗</span><span class="tip-val">${fmtUsd(todayStats.claude.costUsd)} (${todayStats.claude.turns}轮)</span></div>
+            <div class="tip-row"><span class="tip-label">🟦 Antigravity 消耗</span><span class="tip-val">${fmtUsd(todayStats.antigravity.costUsd)} (${todayStats.antigravity.turns}轮)</span></div>
+            <div class="tip-row tip-total"><span class="tip-label">💰 今日等价总值</span><span class="tip-val" style="color:var(--today-color);">${fmtUsd(todayStats.combined.costUsd)}</span></div>
+            <div class="tip-row"><span class="tip-label">⚡ 今日总吞吐</span><span class="tip-val">${fmtTokens(todayStats.combined.totalTokens)} Tok</span></div>
+            <div class="tip-row"><span class="tip-label">💡 缓存节约</span><span class="tip-val" style="color:var(--ok-color);">${fmtUsd(todayStats.combined.cacheSavingsUsd)}</span></div>
+          `;
+        } else if (key === 'kpi-today-claude' && todayStats?.claude) {
+          const tc = todayStats.claude;
+          html = `
+            <div class="tip-header"><span>🟧 今日 Claude 消耗战报</span><span>${tc.sessions} 个会话</span></div>
+            <div class="tip-row"><span class="tip-label">交互轮次</span><span class="tip-val">${tc.turns} 轮</span></div>
+            <div class="tip-row"><span class="tip-label">输入 Token</span><span class="tip-val">${fmtTokens(tc.inputTokens)}</span></div>
+            <div class="tip-row"><span class="tip-label">缓存读取</span><span class="tip-val">${fmtTokens(tc.cacheReadTokens)}</span></div>
+            <div class="tip-row"><span class="tip-label">输出 Token</span><span class="tip-val">${fmtTokens(tc.outputTokens)}</span></div>
+            <div class="tip-row tip-total"><span class="tip-label">今日等价费用</span><span class="tip-val">${fmtUsd(tc.costUsd)}</span></div>
+            <div class="tip-row"><span class="tip-label">缓存节约价值</span><span class="tip-val" style="color:var(--ok-color);">${fmtUsd(tc.cacheSavingsUsd)}</span></div>
+          `;
+        } else if (key === 'kpi-today-agy' && todayStats?.antigravity) {
+          const ta = todayStats.antigravity;
+          html = `
+            <div class="tip-header"><span>🟦 今日 Antigravity 双池明细</span><span>${ta.sessions} 个会话</span></div>
+            <div class="tip-row"><span class="tip-label">🟦 Gemini 原生池</span><span class="tip-val">${fmtUsd(ta.geminiCostUsd)} (${ta.geminiTurns}轮)</span></div>
+            <div class="tip-row"><span class="tip-label">🟪 第三方 Claude/GPT</span><span class="tip-val">${fmtUsd(ta.thirdPartyCostUsd)} (${ta.thirdPartyTurns}轮)</span></div>
+            <div class="tip-row tip-total"><span class="tip-label">今日等价费用</span><span class="tip-val">${fmtUsd(ta.costUsd)}</span></div>
+            <div class="tip-row"><span class="tip-label">今日总吞吐</span><span class="tip-val">${fmtTokens(ta.totalTokens)} Tok</span></div>
+          `;
+        } else if (key === 'kpi-tokens') {
+          const t = totals.combined;
+          html = `
+            <div class="tip-header"><span>📊 Token 吞吐结构 (${selectedDays === 'all' ? '全部' : selectedDays + '天'})</span></div>
+            <div class="tip-row"><span class="tip-label">输入 Tokens</span><span class="tip-val">${fmtTokens(t.inputTokens)}</span></div>
+            <div class="tip-row"><span class="tip-label">缓存写入 Tokens</span><span class="tip-val">${fmtTokens(t.cacheWriteTokens)}</span></div>
+            <div class="tip-row"><span class="tip-label">缓存命中读取</span><span class="tip-val" style="color:var(--ok-color);">${fmtTokens(t.cacheReadTokens)}</span></div>
+            <div class="tip-row"><span class="tip-label">模型输出 Tokens</span><span class="tip-val">${fmtTokens(t.outputTokens)}</span></div>
+            <div class="tip-row tip-total"><span class="tip-label">总吞吐量</span><span class="tip-val">${fmtTokens(t.totalTokens)}</span></div>
+          `;
+        } else if (key === 'kpi-cost') {
+          html = `
+            <div class="tip-header"><span>💰 等价 API 价值分配</span></div>
+            <div class="tip-row"><span class="tip-label">Claude 系列</span><span class="tip-val">${fmtUsd(totals.claude.costUsd)}</span></div>
+            <div class="tip-row"><span class="tip-label">Antigravity 系列</span><span class="tip-val">${fmtUsd(totals.antigravity.costUsd)}</span></div>
+            <div class="tip-row tip-total"><span class="tip-label">等价 API 总值</span><span class="tip-val">${fmtUsd(totals.combined.costUsd)}</span></div>
+            <div class="tip-row"><span class="tip-label">Prompt 缓存节约</span><span class="tip-val" style="color:var(--ok-color);">${fmtUsd(totals.combined.cacheSavingsUsd)}</span></div>
+          `;
+        } else if (key === 'kpi-sessions') {
+          html = `
+            <div class="tip-header"><span>⚡ 会话与交互统计</span></div>
+            <div class="tip-row"><span class="tip-label">Claude 会话 / 轮次</span><span class="tip-val">${totals.claude.sessions} 会话 / ${totals.claude.turns} 轮</span></div>
+            <div class="tip-row"><span class="tip-label">Antigravity 会话 / 轮次</span><span class="tip-val">${totals.antigravity.sessions} 会话 / ${totals.antigravity.turns} 轮</span></div>
+            <div class="tip-row tip-total"><span class="tip-label">全平台合计</span><span class="tip-val">${totals.combined.sessions} 会话 / ${totals.combined.turns} 轮</span></div>
+          `;
+        }
+        if (html) showTooltip(html, e);
+      });
+      card.addEventListener('pointermove', updateTooltipPos);
+      card.addEventListener('pointerleave', hideTooltip);
+    });
+
+    // Attach tooltips to Quota Meter Boxes
+    document.querySelectorAll('.meter-box[data-quota-pool]').forEach(box => {
+      box.addEventListener('pointerenter', e => {
+        if (!currentSnapshot) return;
+        const pool = box.dataset.quotaPool;
+        const { quotaStatus } = currentSnapshot;
+        let html = '';
+        if (pool === 'claude-5h') {
+          const q = quotaStatus.claude;
+          const uPct = q.fiveHour.usedPercentage;
+          const color = uPct >= 85 ? 'var(--danger-color)' : uPct >= 65 ? 'var(--warn-color)' : 'var(--claude-color)';
+          html = `
+            <div class="tip-header">
+              <span>⏱️ Claude 5小时滚动配额</span>
+              <span class="tip-badge badge-claude">${q.planName}</span>
+            </div>
+            <div class="tip-row"><span class="tip-label">当前已用比例</span><span class="tip-val" style="color:${color};">${uPct}% (剩余 ${q.fiveHour.remainingPercentage}%)</span></div>
+            <div class="tip-ratio-bar"><div style="background-color:${color}; width:${Math.min(100, uPct)}%; height:100%;"></div></div>
+            <div class="tip-row"><span class="tip-label">窗口重置倒计时</span><span class="tip-val">${fmtResetCountdown(q.fiveHour.resetsAt)}</span></div>
+            <div class="tip-row"><span class="tip-label">窗口消耗金额</span><span class="tip-val">${fmtUsd(q.fiveHour.costUsd)} / ~$${q.fiveHourBudgetUsd}</span></div>
+            <div class="tip-row"><span class="tip-label">窗口交互统计</span><span class="tip-val">${q.fiveHour.turns} 轮 · ${fmtTokens(q.fiveHour.totalTokens)} Tok</span></div>
+            <div class="tip-row tip-total"><span class="tip-label">数据源直连</span><span class="tip-val" style="color:var(--ok-color);">✓ ${q.isOfficialLiveQuota ? 'Claude Desktop 官方直连' : '周期已对齐'}</span></div>
+          `;
+        } else if (pool === 'claude-7d') {
+          const q = quotaStatus.claude;
+          const uPct = q.sevenDay.usedPercentage;
+          const color = uPct >= 85 ? 'var(--danger-color)' : uPct >= 65 ? 'var(--warn-color)' : 'var(--claude-color)';
+          html = `
+            <div class="tip-header">
+              <span>📅 Claude 7天周度滚动配额</span>
+              <span class="tip-badge badge-claude">${q.planName}</span>
+            </div>
+            <div class="tip-row"><span class="tip-label">当前已用比例</span><span class="tip-val" style="color:${color};">${uPct}% (剩余 ${q.sevenDay.remainingPercentage}%)</span></div>
+            <div class="tip-ratio-bar"><div style="background-color:${color}; width:${Math.min(100, uPct)}%; height:100%;"></div></div>
+            <div class="tip-row"><span class="tip-label">周限额重置倒计时</span><span class="tip-val">${fmtResetCountdown(q.sevenDay.resetsAt)}</span></div>
+            <div class="tip-row"><span class="tip-label">周累计消耗金额</span><span class="tip-val">${fmtUsd(q.sevenDay.costUsd)} / ~$${q.sevenDayBudgetUsd}</span></div>
+            <div class="tip-row"><span class="tip-label">周累计交互量</span><span class="tip-val">${q.sevenDay.turns} 轮 · ${fmtTokens(q.sevenDay.totalTokens)} Tok</span></div>
+            <div class="tip-row tip-total"><span class="tip-label">数据源直连</span><span class="tip-val" style="color:var(--ok-color);">✓ ${q.isOfficialLiveQuota ? 'Claude Desktop 官方直连' : '周期已对齐'}</span></div>
+          `;
+        } else if (pool === 'agy-gemini-5h') {
+          const q = quotaStatus.antigravity;
+          const uPct = q.fiveHour.usedPercentage;
+          const color = uPct >= 85 ? 'var(--danger-color)' : uPct >= 65 ? 'var(--warn-color)' : 'var(--agy-color)';
+          html = `
+            <div class="tip-header">
+              <span>🟦 Gemini 原生 5H 窗口</span>
+              <span class="tip-badge badge-agy">Argon · Pro · Flash</span>
+            </div>
+            <div class="tip-row"><span class="tip-label">已用百分比</span><span class="tip-val" style="color:${color};">${uPct}% (剩余 ${q.fiveHour.remainingPercentage}%)</span></div>
+            <div class="tip-ratio-bar"><div style="background-color:${color}; width:${Math.min(100, uPct)}%; height:100%;"></div></div>
+            <div class="tip-row"><span class="tip-label">刷新倒计时</span><span class="tip-val">${fmtResetCountdown(q.fiveHour.resetsAt)}</span></div>
+            <div class="tip-row"><span class="tip-label">等价价值 / 预算</span><span class="tip-val">${fmtUsd(q.fiveHour.costUsd)} / ~$${q.fiveHourBudgetUsd}</span></div>
+            <div class="tip-row"><span class="tip-label">交互总量</span><span class="tip-val">${q.fiveHour.turns} 轮 · ${fmtTokens(q.fiveHour.totalTokens)} Tok</span></div>
+            <div class="tip-row tip-total"><span class="tip-label">数据源直连</span><span class="tip-val" style="color:var(--ok-color);">✓ Antigravity LanguageServer 直连</span></div>
+          `;
+        } else if (pool === 'agy-gemini-7d') {
+          const q = quotaStatus.antigravity;
+          const uPct = q.sevenDay.usedPercentage;
+          const color = uPct >= 85 ? 'var(--danger-color)' : uPct >= 65 ? 'var(--warn-color)' : 'var(--agy-color)';
+          html = `
+            <div class="tip-header">
+              <span>🟦 Gemini 原生 7D 周限额</span>
+              <span class="tip-badge badge-agy">Argon · Pro · Flash</span>
+            </div>
+            <div class="tip-row"><span class="tip-label">已用百分比</span><span class="tip-val" style="color:${color};">${uPct}% (剩余 ${q.sevenDay.remainingPercentage}%)</span></div>
+            <div class="tip-ratio-bar"><div style="background-color:${color}; width:${Math.min(100, uPct)}%; height:100%;"></div></div>
+            <div class="tip-row"><span class="tip-label">周限额刷新倒计时</span><span class="tip-val">${fmtResetCountdown(q.sevenDay.resetsAt)}</span></div>
+            <div class="tip-row"><span class="tip-label">周累计价值 / 预算</span><span class="tip-val">${fmtUsd(q.sevenDay.costUsd)} / ~$${q.sevenDayBudgetUsd}</span></div>
+            <div class="tip-row"><span class="tip-label">周累计交互量</span><span class="tip-val">${q.sevenDay.turns} 轮 · ${fmtTokens(q.sevenDay.totalTokens)} Tok</span></div>
+            <div class="tip-row tip-total"><span class="tip-label">数据源直连</span><span class="tip-val" style="color:var(--ok-color);">✓ Antigravity LanguageServer 直连</span></div>
+          `;
+        } else if (pool === 'agy-tp-5h' && quotaStatus.antigravity.thirdParty) {
+          const tp = quotaStatus.antigravity.thirdParty;
+          const uPct = tp.fiveHour.usedPercentage;
+          const color = uPct >= 85 ? 'var(--danger-color)' : uPct >= 65 ? 'var(--warn-color)' : 'var(--tp-color)';
+          html = `
+            <div class="tip-header">
+              <span>🟪 第三方 5小时模型池</span>
+              <span class="tip-badge badge-tp">Claude Opus/Sonnet 5.5 · GPT</span>
+            </div>
+            <div class="tip-row"><span class="tip-label">已用百分比</span><span class="tip-val" style="color:${color};">${uPct}% (剩余 ${tp.fiveHour.remainingPercentage}%)</span></div>
+            <div class="tip-ratio-bar"><div style="background-color:${color}; width:${Math.min(100, uPct)}%; height:100%;"></div></div>
+            <div class="tip-row"><span class="tip-label">刷新倒计时</span><span class="tip-val">${fmtResetCountdown(tp.fiveHour.resetsAt)}</span></div>
+            <div class="tip-row"><span class="tip-label">等价价值 / 预算</span><span class="tip-val">${fmtUsd(tp.fiveHour.costUsd)} / ~$${tp.fiveHourBudgetUsd}</span></div>
+            <div class="tip-row"><span class="tip-label">交互总量</span><span class="tip-val">${tp.fiveHour.turns} 轮 · ${fmtTokens(tp.fiveHour.totalTokens)} Tok</span></div>
+            <div class="tip-row tip-total"><span class="tip-label">数据源直连</span><span class="tip-val" style="color:var(--ok-color);">✓ Antigravity 独立配额池直连</span></div>
+          `;
+        } else if (pool === 'agy-tp-7d' && quotaStatus.antigravity.thirdParty) {
+          const tp = quotaStatus.antigravity.thirdParty;
+          const uPct = tp.sevenDay.usedPercentage;
+          const color = uPct >= 85 ? 'var(--danger-color)' : uPct >= 65 ? 'var(--warn-color)' : 'var(--tp-color)';
+          html = `
+            <div class="tip-header">
+              <span>🟪 第三方 7天周限额</span>
+              <span class="tip-badge badge-tp">Claude Opus/Sonnet 5.5 · GPT</span>
+            </div>
+            <div class="tip-row"><span class="tip-label">已用百分比</span><span class="tip-val" style="color:${color};">${uPct}% (剩余 ${tp.sevenDay.remainingPercentage}%)</span></div>
+            <div class="tip-ratio-bar"><div style="background-color:${color}; width:${Math.min(100, uPct)}%; height:100%;"></div></div>
+            <div class="tip-row"><span class="tip-label">周限额刷新倒计时</span><span class="tip-val">${fmtResetCountdown(tp.sevenDay.resetsAt)}</span></div>
+            <div class="tip-row"><span class="tip-label">周累计价值 / 预算</span><span class="tip-val">${fmtUsd(tp.sevenDay.costUsd)} / ~$${tp.sevenDayBudgetUsd}</span></div>
+            <div class="tip-row"><span class="tip-label">周累计交互量</span><span class="tip-val">${tp.sevenDay.turns} 轮 · ${fmtTokens(tp.sevenDay.totalTokens)} Tok</span></div>
+            <div class="tip-row tip-total"><span class="tip-label">数据源直连</span><span class="tip-val" style="color:var(--ok-color);">✓ Antigravity 独立配额池直连</span></div>
+          `;
+        }
+        if (html) showTooltip(html, e);
+      });
+      box.addEventListener('pointermove', updateTooltipPos);
+      box.addEventListener('pointerleave', hideTooltip);
+    });
+
+    async function fetchSnapshot() {
+      const statusEl = document.getElementById('scan-status');
+      statusEl.textContent = 'SYNCING...';
+      try {
+        const res = await fetch(`/api/snapshot?days=${selectedDays}`);
+        currentSnapshot = await res.json();
+        const tStr = new Date(currentSnapshot.generatedAt).toLocaleTimeString([], { hour12: false });
+        statusEl.textContent = `SYNC ${currentSnapshot.scanDurationMs}ms · ${tStr}`;
+        renderAll();
+      } catch (err) {
+        statusEl.textContent = 'ERR: ' + err.message;
+      }
+    }
+
+    function renderKpisAndToday() {
+      const { todayStats, totals } = currentSnapshot;
+
+      if (todayStats) {
+        document.getElementById('today-date-badge').textContent = todayStats.date.slice(5);
+        document.getElementById('today-total-cost').textContent = fmtUsd(todayStats.combined.costUsd);
+        document.getElementById('today-total-turns').textContent = `${todayStats.combined.turns.toLocaleString()} 轮`;
+        document.getElementById('today-total-sub').textContent =
+          `${fmtTokens(todayStats.combined.totalTokens)} · C ${fmtUsd(todayStats.claude.costUsd)} / A ${fmtUsd(todayStats.antigravity.costUsd)}`;
+
+        document.getElementById('today-claude-sessions').textContent = `${todayStats.claude.sessions} 会话`;
+        document.getElementById('today-claude-cost').textContent = fmtUsd(todayStats.claude.costUsd);
+        document.getElementById('today-claude-turns').textContent = `${todayStats.claude.turns.toLocaleString()} 轮`;
+        document.getElementById('today-claude-sub').textContent =
+          `${fmtTokens(todayStats.claude.totalTokens)} · 省 ${fmtUsdShort(todayStats.claude.cacheSavingsUsd)}`;
+
+        const agyT = todayStats.antigravity;
+        document.getElementById('today-agy-sessions').textContent = `${agyT.sessions} 会话`;
+        document.getElementById('today-agy-cost').textContent = fmtUsd(agyT.costUsd);
+        document.getElementById('today-agy-turns').textContent = `${agyT.turns.toLocaleString()} 轮`;
+        document.getElementById('today-agy-sub').textContent =
+          `Gem ${agyT.geminiTurns}轮 (${fmtUsdShort(agyT.geminiCostUsd)}) · 3P ${agyT.thirdPartyTurns}轮 (${fmtUsd(agyT.thirdPartyCostUsd)})`;
+      }
+
+      const periodText =
+        selectedDays === 'today'
+          ? '今日'
+          : selectedDays === 'all'
+          ? '全部'
+          : `${selectedDays}天`;
+      document.getElementById('period-label-1').textContent = periodText;
+
+      const t =
+        selectedPlatform === 'claude'
+          ? totals.claude
+          : selectedPlatform === 'antigravity'
+          ? totals.antigravity
+          : totals.combined;
+
+      document.getElementById('kpi-total-tokens').textContent = fmtTokens(t.totalTokens);
+      document.getElementById('kpi-tokens-breakdown').textContent =
+        `入 ${fmtTokens(t.inputTokens + t.cacheWriteTokens)} · 缓 ${fmtTokens(t.cacheReadTokens)} · 出 ${fmtTokens(t.outputTokens)}`;
+
+      document.getElementById('kpi-total-cost').textContent = fmtUsd(t.costUsd);
+      document.getElementById('kpi-cost-split').textContent =
+        `Claude ${fmtUsdShort(totals.claude.costUsd)} · AGY ${fmtUsdShort(totals.antigravity.costUsd)}`;
+
+      const inputPool = t.inputTokens + t.cacheWriteTokens + t.cacheReadTokens;
+      const hitRate = inputPool > 0 ? ((t.cacheReadTokens / inputPool) * 100).toFixed(1) : '0.0';
+      document.getElementById('kpi-cache-rate').textContent = `命中 ${hitRate}%`;
+      document.getElementById('kpi-cache-savings').textContent = `省 ${fmtUsdShort(t.cacheSavingsUsd)}`;
+
+      document.getElementById('kpi-total-turns').textContent = `${t.turns.toLocaleString()} 轮`;
+      document.getElementById('kpi-total-sessions').textContent = `${t.sessions} 会话`;
+      document.getElementById('kpi-sessions-split').textContent =
+        `Claude ${totals.claude.sessions} 会话 · AGY ${totals.antigravity.sessions} 会话`;
+    }
+
+    function renderQuotaCards() {
+      const { quotaStatus, hookScriptPath } = currentSnapshot;
+
+      // 1. Claude Quota Console
+      const cq = quotaStatus.claude;
+      document.getElementById('claude-plan-badge').textContent = cq.planName.replace('Claude ', '');
+      document.getElementById('claude-30d-inline').textContent =
+        `30d: ${fmtUsdShort(cq.thirtyDay.costUsd)} (${cq.thirtyDay.turns.toLocaleString()}轮 · ${fmtTokens(cq.thirtyDay.totalTokens)})`;
+      document.getElementById('claude-roi-badge').textContent =
+        `回本 ${cq.thirtyDay.roiMultiplier}x`;
+
+      document.getElementById('claude-5h-pct').textContent =
+        `已用 ${cq.fiveHour.usedPercentage}% · 剩 ${Math.round(cq.fiveHour.remainingPercentage)}%`;
+      renderVoxelBar('claude-5h-bar', cq.fiveHour.usedPercentage, 'var(--claude-color)');
+      document.getElementById('claude-5h-detail').textContent =
+        `${cq.fiveHour.turns}轮 · ${fmtTokens(cq.fiveHour.totalTokens)} · ${fmtUsdShort(cq.fiveHour.costUsd)}/~${fmtUsdShort(cq.fiveHourBudgetUsd)}`;
+      document.getElementById('claude-5h-reset').textContent = fmtResetCountdown(cq.fiveHour.resetsAt);
+
+      document.getElementById('claude-7d-pct').textContent =
+        `已用 ${cq.sevenDay.usedPercentage}% · 剩 ${Math.round(cq.sevenDay.remainingPercentage)}%`;
+      renderVoxelBar('claude-7d-bar', cq.sevenDay.usedPercentage, 'var(--claude-color)');
+      document.getElementById('claude-7d-detail').textContent =
+        `${cq.sevenDay.turns}轮 · ${fmtTokens(cq.sevenDay.totalTokens)} · ${fmtUsdShort(cq.sevenDay.costUsd)}/~${fmtUsdShort(cq.sevenDayBudgetUsd)}`;
+      document.getElementById('claude-30d-summary').textContent = fmtResetCountdown(cq.sevenDay.resetsAt);
+
+      // 2. Antigravity Quota Console
+      const aq = quotaStatus.antigravity;
+      document.getElementById('agy-plan-badge').textContent = aq.planName
+        .replace('Gemini ', '')
+        .replace(' (g1-ultra-lite)', '');
+      document.getElementById('agy-30d-inline').textContent =
+        `30d: ${fmtUsdShort(aq.thirtyDay.costUsd)} (${aq.thirtyDay.turns.toLocaleString()}轮 · ${fmtTokens(aq.thirtyDay.totalTokens)})`;
+      document.getElementById('agy-roi-badge').textContent =
+        `回本 ${aq.thirtyDay.roiMultiplier}x`;
+
+      const agy5hRem = aq.fiveHour.nativeRemainingPct ?? Math.round(aq.fiveHour.remainingPercentage);
+      document.getElementById('agy-5h-pct').textContent =
+        `已用 ${aq.fiveHour.usedPercentage}% · 剩 ${agy5hRem}%`;
+      renderVoxelBar('agy-5h-bar', aq.fiveHour.usedPercentage, 'var(--agy-color)');
+      document.getElementById('agy-5h-detail').textContent =
+        `${aq.fiveHour.turns}轮 · ${fmtTokens(aq.fiveHour.totalTokens)} · ${fmtUsdShort(aq.fiveHour.costUsd)}/~${fmtUsdShort(aq.fiveHourBudgetUsd)}`;
+      document.getElementById('agy-5h-reset').textContent = fmtResetCountdown(aq.fiveHour.resetsAt);
+
+      const agy7dRem = aq.sevenDay.nativeRemainingPct ?? Math.round(aq.sevenDay.remainingPercentage);
+      document.getElementById('agy-7d-pct').textContent =
+        `已用 ${aq.sevenDay.usedPercentage}% · 剩 ${agy7dRem}%`;
+      renderVoxelBar('agy-7d-bar', aq.sevenDay.usedPercentage, 'var(--agy-color)');
+      document.getElementById('agy-7d-detail').textContent =
+        `${aq.sevenDay.turns}轮 · ${fmtTokens(aq.sevenDay.totalTokens)} · ${fmtUsdShort(aq.sevenDay.costUsd)}/~${fmtUsdShort(aq.sevenDayBudgetUsd)}`;
+      document.getElementById('agy-30d-summary').textContent = fmtResetCountdown(aq.sevenDay.resetsAt);
+
+      if (aq.thirdParty) {
+        const tp = aq.thirdParty;
+        const tp5hRem = tp.fiveHour.nativeRemainingPct ?? Math.round(tp.fiveHour.remainingPercentage);
+        document.getElementById('agy-tp-5h-pct').textContent =
+          `已用 ${tp.fiveHour.usedPercentage}% · 剩 ${tp5hRem}%`;
+        renderVoxelBar('agy-tp-5h-bar', tp.fiveHour.usedPercentage, 'var(--tp-color)');
+        document.getElementById('agy-tp-5h-detail').textContent =
+          `${tp.fiveHour.turns}轮 · ${fmtTokens(tp.fiveHour.totalTokens)} · ${fmtUsd(tp.fiveHour.costUsd)}/~${fmtUsdShort(tp.fiveHourBudgetUsd)}`;
+        document.getElementById('agy-tp-5h-reset').textContent = fmtResetCountdown(tp.fiveHour.resetsAt);
+
+        const tp7dRem = tp.sevenDay.nativeRemainingPct ?? Math.round(tp.sevenDay.remainingPercentage);
+        document.getElementById('agy-tp-7d-pct').textContent =
+          `已用 ${tp.sevenDay.usedPercentage}% · 剩 ${tp7dRem}%`;
+        renderVoxelBar('agy-tp-7d-bar', tp.sevenDay.usedPercentage, 'var(--tp-color)');
+        document.getElementById('agy-tp-7d-detail').textContent =
+          `${tp.sevenDay.turns}轮 · ${fmtTokens(tp.sevenDay.totalTokens)} · ${fmtUsd(tp.sevenDay.costUsd)}/~${fmtUsdShort(tp.sevenDayBudgetUsd)}`;
+        document.getElementById('agy-tp-7d-reset').textContent = fmtResetCountdown(tp.sevenDay.resetsAt);
+        const tp30dEl = document.getElementById('tp-30d-inline');
+        if (tp30dEl) {
+          tp30dEl.textContent = `7D: ${fmtUsdShort(tp.sevenDay.costUsd || 0)} (${(tp.sevenDay.turns || 0).toLocaleString()}轮 · ${fmtTokens(tp.sevenDay.totalTokens || 0)})`;
+        }
+      }
+
+      document.getElementById('select-claude-plan').value = cq.planId || currentSnapshot.settings.claudePlan || 'pro';
+      document.getElementById('select-agy-plan').value = aq.planId || currentSnapshot.settings.antigravityPlan || 'ultra5x';
+      document.getElementById('snippet-claude-statusline').textContent = JSON.stringify(
+        {
+          statusLine: {
+            type: 'command',
+            command: `node "${hookScriptPath}" --claude-statusline`
+          }
+        },
+        null,
+        2
+      );
+    }
+
+    // Helper: Draw a Precision Architectural Column (Flat Matte, Crisp 2px Radius)
+    function drawVoxelBlock(x, y, w, h, frontColor, topColor, sideColor, dx = 4, dy = 3.5, dataAttrs = '') {
+      if (h <= 0.4) return '';
+      const rx = Math.min(2.2, w * 0.22).toFixed(1);
+      return `
+        <g class="voxel-bar-group" ${dataAttrs}>
+          <rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" rx="${rx}" ry="${rx}" fill="${frontColor}" />
+        </g>
+      `;
+    }
+
+    function renderDailyHeatmap() {
+      const container = document.getElementById('daily-heatmap-container');
+      const scrollWrapper = document.getElementById('heatmap-scroll-wrapper');
+      const statMonth = document.getElementById('act-most-active-month');
+      const statDay = document.getElementById('act-most-active-day');
+      const statLongest = document.getElementById('act-longest-streak');
+      const statCurrent = document.getElementById('act-current-streak');
+      if (!container || !currentSnapshot) return;
+
+      const series = currentSnapshot.annualDailySeries || currentSnapshot.dailySeries || [];
+      const dailyMap = new Map();
+      series.forEach(d => dailyMap.set(d.date, d));
+
+      const toLocalYMD = (dt) => {
+        const yyyy = dt.getFullYear();
+        const mm = String(dt.getMonth() + 1).padStart(2, '0');
+        const dd = String(dt.getDate()).padStart(2, '0');
+        return `${yyyy}-${mm}-${dd}`;
+      };
+
+      // Metric getter based on selectedChartMetric and selectedPlatform
+      const getVal = (d) => {
+        if (!d) return 0;
+        let c = d.claudeCostUsd;
+        let a = d.agyCostUsd;
+        if (selectedChartMetric === 'tokens') {
+          c = d.claudeTokens;
+          a = d.agyTokens;
+        } else if (selectedChartMetric === 'turns') {
+          c = d.claudeTurns;
+          a = d.agyTurns;
+        }
+        if (selectedPlatform === 'claude') return c;
+        if (selectedPlatform === 'antigravity') return a;
+        return c + a;
+      };
+
+      // Determine anchor date (latest in series or today)
+      let todayDateStr = toLocalYMD(new Date());
+      if (series.length > 0) {
+        const lastSeriesDate = series[series.length - 1].date;
+        if (lastSeriesDate > todayDateStr) todayDateStr = lastSeriesDate;
+      }
+      const endDate = new Date(todayDateStr + 'T12:00:00');
+      const endDayOfWeek = endDate.getDay(); // 0 = Sun, 6 = Sat
+      const lastDate = new Date(endDate);
+      lastDate.setDate(lastDate.getDate() + (6 - endDayOfWeek));
+
+      const startDate = new Date(lastDate);
+      startDate.setDate(startDate.getDate() - (52 * 7 - 1));
+
+      // Build 52 weeks (364 days)
+      const weeks = [];
+      let cur = new Date(startDate);
+      let maxVal = 0;
+      const monthSums = {};
+      let maxDayObj = null;
+      let longestStreak = 0;
+      let tempStreak = 0;
+
+      for (let w = 0; w < 52; w++) {
+        const days = [];
+        for (let d = 0; d < 7; d++) {
+          const dStr = toLocalYMD(cur);
+          const isFuture = cur > endDate;
+          const data = dailyMap.get(dStr);
+          const val = isFuture ? 0 : getVal(data);
+
+          if (!isFuture) {
+            if (val > maxVal) maxVal = val;
+
+            // Monthly accumulation for most active month
+            const mKey = cur.toLocaleString('en-US', { month: 'long' });
+            monthSums[mKey] = (monthSums[mKey] || 0) + val;
+
+            // Most active day tracking
+            if (val > 0 && (!maxDayObj || val > maxDayObj.val)) {
+              maxDayObj = {
+                date: dStr,
+                val,
+                displayDate: cur.toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+              };
+            }
+
+            // Streak tracking
+            if (val > 0) {
+              tempStreak++;
+              if (tempStreak > longestStreak) longestStreak = tempStreak;
+            } else {
+              tempStreak = 0;
+            }
+          }
+
+          days.push({
+            date: dStr,
+            dayOfWeek: d,
+            month: cur.toLocaleString('en-US', { month: 'short' }),
+            val,
+            data,
+            isFuture
+          });
+          cur.setDate(cur.getDate() + 1);
+        }
+        weeks.push(days);
+      }
+      if (maxVal <= 0) maxVal = 1;
+
+      // Current streak (counting backwards from today)
+      let currentStreak = 0;
+      let checkDate = new Date(endDate);
+      while (true) {
+        const dStr = toLocalYMD(checkDate);
+        const data = dailyMap.get(dStr);
+        const val = getVal(data);
+        if (val > 0) {
+          currentStreak++;
+          checkDate.setDate(checkDate.getDate() - 1);
+        } else {
+          break;
+        }
+      }
+
+      // Most active month calculation
+      let mostActiveMonth = 'None';
+      let maxMonthSum = 0;
+      for (const [m, v] of Object.entries(monthSums)) {
+        if (v > maxMonthSum) {
+          maxMonthSum = v;
+          mostActiveMonth = m;
+        }
+      }
+
+      // Populate 4 Summary Stats matching reference style
+      if (statMonth) statMonth.textContent = maxMonthSum > 0 ? mostActiveMonth : 'None';
+      if (statDay) {
+        statDay.textContent = maxDayObj ? maxDayObj.displayDate : 'None';
+      }
+      if (statLongest) statLongest.textContent = `${longestStreak} days`;
+      if (statCurrent) statCurrent.textContent = `${currentStreak} days`;
+
+      // Month labels on top (aligned to week index, full 52-week span)
+      const startX = 28;
+      const stepX = 14.0;
+      const startY = 18;
+      const stepY = 14.0;
+      const tileW = 11.4;
+      const tileH = 11.4;
+
+      const monthLabels = [];
+      let lastMonth = '';
+      weeks.forEach((week, wIdx) => {
+        const m = week[0].month;
+        if (m !== lastMonth && wIdx <= 49) {
+          monthLabels.push({ month: m, x: (startX + wIdx * stepX).toFixed(1) });
+          lastMonth = m;
+        }
+      });
+
+      // Build 52-week SVG Heatmap (100% responsive, zero scrollbars)
+      let svg = `<svg viewBox="0 0 756 116" preserveAspectRatio="xMidYMid meet" class="activity-calendar-svg">`;
+      monthLabels.forEach(ml => {
+        svg += `<text x="${ml.x}" y="11" class="act-month-text">${ml.month}</text>`;
+      });
+
+      // Weekday labels on the left
+      const weekdayLabels = [
+        { label: 'Mon', row: 1 },
+        { label: 'Wed', row: 3 },
+        { label: 'Fri', row: 5 }
+      ];
+      weekdayLabels.forEach(wl => {
+        const wy = (startY + wl.row * stepY + tileH * 0.78).toFixed(1);
+        svg += `<text x="0" y="${wy}" class="act-month-text" style="font-size:9px;opacity:0.75;">${wl.label}</text>`;
+      });
+
+      weeks.forEach((week, wIdx) => {
+        const x = (startX + wIdx * stepX).toFixed(1);
+        week.forEach((day, dIdx) => {
+          if (day.isFuture) return;
+          const y = (startY + dIdx * stepY).toFixed(1);
+          let level = 0;
+          if (day.val > 0) {
+            const r = day.val / maxVal;
+            if (r <= 0.20) level = 1;
+            else if (r <= 0.50) level = 2;
+            else if (r <= 0.80) level = 3;
+            else level = 4;
+          }
+          svg += `<rect x="${x}" y="${y}" width="${tileW}" height="${tileH}" rx="2.4" ry="2.4" class="act-tile lvl-${level}" data-date="${day.date}" />`;
+        });
+      });
+      svg += `</svg>`;
+      container.innerHTML = svg;
+
+      // Bind instant HUD tooltip to each tile
+      container.querySelectorAll('.act-tile').forEach(tile => {
+        const dateStr = tile.getAttribute('data-date');
+        if (!dateStr) return;
+
+        tile.addEventListener('pointerenter', e => {
+          const d = dailyMap.get(dateStr);
+          const dateObj = new Date(dateStr + 'T12:00:00');
+          const weekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+          const weekdayStr = !isNaN(dateObj.getTime()) ? weekdays[dateObj.getDay()] : '';
+
+          let html = '';
+          if (d && (d.claudeCostUsd > 0 || d.agyCostUsd > 0 || d.claudeTurns > 0 || d.agyTurns > 0)) {
+            const totCost = d.claudeCostUsd + d.agyCostUsd;
+            const totTokens = d.claudeTokens + d.agyTokens;
+            const totTurns = d.claudeTurns + d.agyTurns;
+            const cPct = totCost > 0 ? ((d.claudeCostUsd / totCost) * 100).toFixed(1) : 0;
+            const aPct = totCost > 0 ? (100 - cPct).toFixed(1) : 0;
+
+            html = `
+              <div class="voxel-tip-head">
+                <span class="tip-dot" style="background:var(--act-heat-4);"></span>
+                <span class="tip-title">📅 ${dateStr} (${weekdayStr})</span>
+                <span class="pixel-tag">活跃热力点</span>
+              </div>
+              <div class="voxel-tip-body">
+                <div class="tip-row">
+                  <span class="tip-label">当日等价总额</span>
+                  <span class="tip-val" style="color:var(--text-primary);font-weight:700;">$${totCost.toFixed(2)}</span>
+                </div>
+                <div class="tip-row">
+                  <span class="tip-label">🟧 Claude Code</span>
+                  <span class="tip-val" style="color:var(--claude-color);">${fmtUsd(d.claudeCostUsd)} (${d.claudeTurns}轮 · ${fmtTokens(d.claudeTokens)})</span>
+                </div>
+                <div class="tip-row">
+                  <span class="tip-label">🟦 Antigravity</span>
+                  <span class="tip-val" style="color:var(--agy-color);">${fmtUsd(d.agyCostUsd)} (${d.agyTurns}轮 · ${fmtTokens(d.agyTokens)})</span>
+                </div>
+                <div class="tip-row">
+                  <span class="tip-label">合计吞吐轮次</span>
+                  <span class="tip-val">${totTurns.toLocaleString()} 轮 · ${fmtTokens(totTokens)}</span>
+                </div>
+                <div class="tip-ratio-bar">
+                  <div class="tip-ratio-part" style="inline-size: ${cPct}%; background: var(--claude-color);" title="Claude: ${cPct}%"></div>
+                  <div class="tip-ratio-part" style="inline-size: ${aPct}%; background: var(--agy-color);" title="AGY: ${aPct}%"></div>
+                </div>
+                <div class="tip-row" style="font-size:0.65rem; color:var(--text-dim); margin-top:2px;">
+                  <span>Claude 占比: ${cPct}%</span>
+                  <span>AGY 占比: ${aPct}%</span>
+                </div>
+              </div>
+            `;
+          } else {
+            html = `
+              <div class="voxel-tip-head">
+                <span class="tip-dot" style="background:var(--act-heat-0);"></span>
+                <span class="tip-title">📅 ${dateStr} (${weekdayStr})</span>
+                <span class="pixel-tag">静默日</span>
+              </div>
+              <div class="voxel-tip-body">
+                <div class="tip-row" style="color:var(--text-secondary);font-size:0.75rem;">
+                  <span>当日无模型调用与费用消耗 ($0.00)</span>
+                </div>
+              </div>
+            `;
+          }
+          showTooltip(html, e);
+        });
+
+        tile.addEventListener('pointermove', e => {
+          positionTooltip(e.clientX, e.clientY);
+        });
+
+        tile.addEventListener('pointerleave', () => {
+          hideTooltip();
+        });
+      });
+    }
+
+    function renderDailyChart() {
+      const container = document.getElementById('daily-chart-container');
+      if (!currentSnapshot) return;
+      const series = currentSnapshot.dailySeries || [];
+      if (series.length === 0) {
+        container.innerHTML = `<div style="display:grid;place-items:center;block-size:100%;color:var(--text-secondary);font-size:0.78rem;">所选周期暂无每日数据</div>`;
+        return;
+      }
+
+      const w = Math.max(340, container.clientWidth - 10);
+      const h = Math.max(110, container.clientHeight - 8);
+      const padL = 44;
+      const padR = 14;
+      const padT = 14;
+      const padB = 22;
+      const plotW = w - padL - padR;
+      const plotH = h - padT - padB;
+
+      const getVal = (d, plat) => {
+        if (selectedChartMetric === 'tokens') return plat === 'claude' ? d.claudeTokens : d.agyTokens;
+        if (selectedChartMetric === 'turns') return plat === 'claude' ? d.claudeTurns : d.agyTurns;
+        return plat === 'claude' ? d.claudeCostUsd : d.agyCostUsd;
+      };
+
+      let maxVal = 0;
+      for (const d of series) {
+        const c = selectedPlatform === 'antigravity' ? 0 : getVal(d, 'claude');
+        const a = selectedPlatform === 'claude' ? 0 : getVal(d, 'antigravity');
+        if (c + a > maxVal) maxVal = c + a;
+      }
+      if (maxVal <= 0) maxVal = 1;
+
+      const barStep = plotW / series.length;
+      const barW = Math.max(5, Math.min(20, barStep * 0.62));
+      const isoDx = Math.min(4.5, barW * 0.34);
+      const isoDy = Math.min(3.8, barW * 0.28);
+
+      let barsSvg = '';
+      let hitColumnsSvg = '';
+      let hoverHighlightsSvg = '';
+
+      series.forEach((d, idx) => {
+        const cVal = selectedPlatform === 'antigravity' ? 0 : getVal(d, 'claude');
+        const aVal = selectedPlatform === 'claude' ? 0 : getVal(d, 'antigravity');
+        const cH = (cVal / maxVal) * plotH;
+        const aH = (aVal / maxVal) * plotH;
+
+        const x = padL + idx * barStep + (barStep - barW) / 2;
+        const colX = padL + idx * barStep;
+        const yClaude = padT + plotH - cH;
+        const yAgy = yClaude - aH;
+
+        // Subtle background highlight column (visible on hover)
+        hoverHighlightsSvg += `
+          <rect id="daily-col-hl-${idx}" class="chart-col-hover" x="${colX.toFixed(1)}" y="${padT}" width="${barStep.toFixed(1)}" height="${plotH}" fill="var(--agy-soft)" opacity="0" />
+        `;
+
+        // 3D Voxel stacked blocks
+        if (cH > 0) {
+          barsSvg += drawVoxelBlock(x, yClaude, barW, cH, 'var(--claude-color)', 'var(--claude-top)', 'var(--claude-side)', isoDx, isoDy);
+        }
+        if (aH > 0) {
+          barsSvg += drawVoxelBlock(x, yAgy, barW, aH, 'var(--agy-color)', 'var(--agy-top)', 'var(--agy-side)', isoDx, isoDy);
+        }
+
+        // Full-height invisible interactive hit column covering the entire height of the chart!
+        hitColumnsSvg += `
+          <rect class="chart-hit-column" data-daily-idx="${idx}" x="${colX.toFixed(1)}" y="${padT}" width="${barStep.toFixed(1)}" height="${plotH}" fill="transparent" />
+        `;
+
+        const showLabel = series.length <= 10 || idx === 0 || idx === series.length - 1 || idx % Math.ceil(series.length / 6) === 0;
+        if (showLabel) {
+          barsSvg += `<text x="${(x + barW / 2).toFixed(1)}" y="${h - 5}" text-anchor="middle" fill="var(--text-secondary)" font-family="var(--font-mono)" font-size="10.5">${d.date.slice(5)}</text>`;
+        }
+      });
+
+      const fmtAxis = v => {
+        if (selectedChartMetric === 'cost') return '$' + (v >= 10 ? Math.round(v) : v.toFixed(1));
+        if (selectedChartMetric === 'tokens') return fmtTokens(v);
+        return Math.round(v);
+      };
+
+      document.getElementById('daily-chart-summary').textContent = `峰值 ${fmtAxis(maxVal)}/日 · ${series.length}天`;
+
+      container.innerHTML = `
+        <svg viewBox="0 0 ${w} ${h}" width="100%" height="100%" role="img" aria-label="每日使用量3D体素趋势图">
+          <line x1="${padL}" y1="${padT}" x2="${w - padR}" y2="${padT}" stroke="var(--voxel-border)" stroke-dasharray="3 3" />
+          <line x1="${padL}" y1="${padT + plotH * 0.5}" x2="${w - padR}" y2="${padT + plotH * 0.5}" stroke="var(--voxel-border)" stroke-dasharray="2 4" stroke-opacity="0.5" />
+          <line x1="${padL}" y1="${padT + plotH}" x2="${w - padR}" y2="${padT + plotH}" stroke="var(--voxel-border-strong)" />
+          <text x="${padL - 6}" y="${padT + 8}" text-anchor="end" fill="var(--text-secondary)" font-family="var(--font-mono)" font-size="10.5">${fmtAxis(maxVal)}</text>
+          <text x="${padL - 6}" y="${padT + plotH}" text-anchor="end" fill="var(--text-secondary)" font-family="var(--font-mono)" font-size="10.5">0</text>
+          ${hoverHighlightsSvg}
+          ${barsSvg}
+          ${hitColumnsSvg}
+        </svg>
+      `;
+
+      // Attach high-speed instant hover events to daily chart full-height columns
+      container.querySelectorAll('.chart-hit-column[data-daily-idx]').forEach(col => {
+        const idx = Number(col.dataset.dailyIdx);
+        const hl = container.querySelector(`#daily-col-hl-${idx}`);
+
+        col.addEventListener('pointerenter', e => {
+          if (hl) hl.setAttribute('opacity', '1');
+          const d = series[idx];
+          if (!d) return;
+
+          const totalCost = d.claudeCostUsd + d.agyCostUsd;
+          const cPct = totalCost > 0 ? Math.round((d.claudeCostUsd / totalCost) * 100) : 0;
+          const aPct = totalCost > 0 ? (100 - cPct) : 0;
+          const totalTurns = d.claudeTurns + d.agyTurns;
+          const totalTokens = d.claudeTokens + d.agyTokens;
+
+          const html = `
+            <div class="tip-header">
+              <span>📅 ${d.date} 战报</span>
+              <span class="tip-badge badge-today">${totalTurns} 轮交互</span>
+            </div>
+            <div class="tip-row">
+              <span class="tip-label">🟧 Claude Code</span>
+              <span class="tip-val">$${d.claudeCostUsd.toFixed(2)} <span style="color:var(--text-secondary);font-size:0.68rem;">(${cPct}%)</span></span>
+            </div>
+            <div class="tip-row" style="font-size:0.68rem; color:var(--text-secondary); margin-inline-start:1.2rem;">
+              <span>${d.claudeTurns} 轮 · ${fmtTokens(d.claudeTokens)} Tok</span>
+            </div>
+            <div class="tip-row">
+              <span class="tip-label">🟦 Antigravity</span>
+              <span class="tip-val">$${d.agyCostUsd.toFixed(2)} <span style="color:var(--text-secondary);font-size:0.68rem;">(${aPct}%)</span></span>
+            </div>
+            <div class="tip-row" style="font-size:0.68rem; color:var(--text-secondary); margin-inline-start:1.2rem;">
+              <span>${d.agyTurns} 轮 · ${fmtTokens(d.agyTokens)} Tok</span>
+            </div>
+            <div class="tip-ratio-bar">
+              <div class="seg-claude" style="width: ${cPct}%;"></div>
+              <div class="seg-agy" style="width: ${aPct}%;"></div>
+            </div>
+            <div class="tip-row tip-total">
+              <span class="tip-label">💰 当日等价总值</span>
+              <span class="tip-val" style="color:var(--today-color); font-size:0.86rem;">$${totalCost.toFixed(2)}</span>
+            </div>
+            <div class="tip-row" style="font-size:0.7rem;">
+              <span class="tip-label">⚡ 吞吐总量</span>
+              <span class="tip-val">${fmtTokens(totalTokens)} Tokens</span>
+            </div>
+          `;
+          showTooltip(html, e);
+        });
+
+        col.addEventListener('pointermove', updateTooltipPos);
+
+        col.addEventListener('pointerleave', () => {
+          if (hl) hl.setAttribute('opacity', '0');
+          hideTooltip();
+        });
+      });
+    }
+
+    function renderHourlyChart() {
+      const container = document.getElementById('hourly-chart-container');
+      if (!currentSnapshot) return;
+      const hours = currentSnapshot.hourlyCounts || [];
+      const w = Math.max(340, container.clientWidth - 10);
+      const h = Math.max(110, container.clientHeight - 8);
+      const padL = 38;
+      const padR = 14;
+      const padT = 14;
+      const padB = 22;
+      const plotW = w - padL - padR;
+      const plotH = h - padT - padB;
+
+      let maxTurns = 1;
+      let peakHour = 0;
+      for (const hr of hours) {
+        const c = selectedPlatform === 'antigravity' ? 0 : hr.claudeTurns;
+        const a = selectedPlatform === 'claude' ? 0 : hr.agyTurns;
+        if (c + a > maxTurns) {
+          maxTurns = c + a;
+          peakHour = hr.hour;
+        }
+      }
+
+      document.getElementById('hourly-chart-summary').textContent = `高峰 ${String(peakHour).padStart(2, '0')}:00 (${maxTurns}轮)`;
+
+      const step = plotW / 24;
+      const barW = Math.max(6, Math.min(18, step * 0.62));
+      const isoDx = Math.min(4.5, barW * 0.34);
+      const isoDy = Math.min(3.8, barW * 0.28);
+      let bars = '';
+      let hitColumnsSvg = '';
+      let hoverHighlightsSvg = '';
+
+      hours.forEach((hr, i) => {
+        const c = selectedPlatform === 'antigravity' ? 0 : hr.claudeTurns;
+        const a = selectedPlatform === 'claude' ? 0 : hr.agyTurns;
+        const cH = (c / maxTurns) * plotH;
+        const aH = (a / maxTurns) * plotH;
+        const x = padL + i * step + (step - barW) / 2;
+        const colX = padL + i * step;
+        const yC = padT + plotH - cH;
+        const yA = yC - aH;
+
+        hoverHighlightsSvg += `
+          <rect id="hourly-col-hl-${hr.hour}" class="chart-col-hover" x="${colX.toFixed(1)}" y="${padT}" width="${step.toFixed(1)}" height="${plotH}" fill="var(--agy-soft)" opacity="0" />
+        `;
+
+        if (cH > 0) {
+          bars += drawVoxelBlock(x, yC, barW, cH, 'var(--claude-color)', 'var(--claude-top)', 'var(--claude-side)', isoDx, isoDy);
+        }
+        if (aH > 0) {
+          bars += drawVoxelBlock(x, yA, barW, aH, 'var(--agy-color)', 'var(--agy-top)', 'var(--agy-side)', isoDx, isoDy);
+        }
+
+        hitColumnsSvg += `
+          <rect class="chart-hit-column" data-hourly-hour="${hr.hour}" x="${colX.toFixed(1)}" y="${padT}" width="${step.toFixed(1)}" height="${plotH}" fill="transparent" />
+        `;
+
+        if (i % 3 === 0) {
+          bars += `<text x="${(x + barW / 2).toFixed(1)}" y="${h - 5}" text-anchor="middle" fill="var(--text-secondary)" font-family="var(--font-mono)" font-size="10.5">${String(i).padStart(2, '0')}h</text>`;
+        }
+      });
+
+      container.innerHTML = `
+        <svg viewBox="0 0 ${w} ${h}" width="100%" height="100%" role="img" aria-label="24小时活跃度3D体素分布图">
+          <line x1="${padL}" y1="${padT}" x2="${w - padR}" y2="${padT}" stroke="var(--voxel-border)" stroke-dasharray="3 3" />
+          <line x1="${padL}" y1="${padT + plotH * 0.5}" x2="${w - padR}" y2="${padT + plotH * 0.5}" stroke="var(--voxel-border)" stroke-dasharray="2 4" stroke-opacity="0.5" />
+          <line x1="${padL}" y1="${padT + plotH}" x2="${w - padR}" y2="${padT + plotH}" stroke="var(--voxel-border-strong)" />
+          <text x="${padL - 6}" y="${padT + 8}" text-anchor="end" fill="var(--text-secondary)" font-family="var(--font-mono)" font-size="10.5">${maxTurns}</text>
+          <text x="${padL - 6}" y="${padT + plotH}" text-anchor="end" fill="var(--text-secondary)" font-family="var(--font-mono)" font-size="10.5">0</text>
+          ${hoverHighlightsSvg}
+          ${bars}
+          ${hitColumnsSvg}
+        </svg>
+      `;
+
+      // Attach high-speed instant hover events to hourly chart full-height columns
+      container.querySelectorAll('.chart-hit-column[data-hourly-hour]').forEach(col => {
+        const hour = Number(col.dataset.hourlyHour);
+        const hl = container.querySelector(`#hourly-col-hl-${hour}`);
+
+        col.addEventListener('pointerenter', e => {
+          if (hl) hl.setAttribute('opacity', '1');
+          const hr = hours[hour];
+          if (!hr) return;
+
+          const totalTurns = hr.claudeTurns + hr.agyTurns;
+          const cPct = totalTurns > 0 ? Math.round((hr.claudeTurns / totalTurns) * 100) : 0;
+          const aPct = totalTurns > 0 ? (100 - cPct) : 0;
+
+          const html = `
+            <div class="tip-header">
+              <span>🕒 ${String(hour).padStart(2, '0')}:00 ~ ${String((hour + 1) % 24).padStart(2, '0')}:00</span>
+              <span class="tip-badge badge-today">${totalTurns} 轮次</span>
+            </div>
+            <div class="tip-row">
+              <span class="tip-label">🟧 Claude 交互</span>
+              <span class="tip-val">${hr.claudeTurns} 轮 <span style="color:var(--text-secondary);font-size:0.68rem;">(${cPct}%)</span></span>
+            </div>
+            <div class="tip-row">
+              <span class="tip-label">🟦 Antigravity 交互</span>
+              <span class="tip-val">${hr.agyTurns} 轮 <span style="color:var(--text-secondary);font-size:0.68rem;">(${aPct}%)</span></span>
+            </div>
+            <div class="tip-ratio-bar">
+              <div class="seg-claude" style="width: ${cPct}%;"></div>
+              <div class="seg-agy" style="width: ${aPct}%;"></div>
+            </div>
+            <div class="tip-row tip-total">
+              <span class="tip-label">⚡ 时段总吞吐</span>
+              <span class="tip-val">${fmtTokens(hr.tokens)} Tokens</span>
+            </div>
+          `;
+          showTooltip(html, e);
+        });
+
+        col.addEventListener('pointermove', updateTooltipPos);
+
+        col.addEventListener('pointerleave', () => {
+          if (hl) hl.setAttribute('opacity', '0');
+          hideTooltip();
+        });
+      });
+    }
+
+    function renderTables() {
+      const todayDate = currentSnapshot.todayStats?.date || '';
+
+      const rawModels =
+        selectedModelScope === 'today'
+          ? currentSnapshot.todayStats?.models || []
+          : currentSnapshot.models || [];
+      const models = rawModels.filter(
+        m => selectedPlatform === 'all' || m.platform === selectedPlatform
+      );
+
+      const modelsTbody = document.getElementById('models-tbody');
+      modelsTbody.innerHTML =
+        models
+          .map(
+            m => `
+        <tr>
+          <td style="font-weight: 700;" class="truncate-cell" title="${m.model}">${m.model}</td>
+          <td>
+            <span class="badge ${m.platform === 'claude' ? 'badge-claude' : 'badge-agy'}">
+              ${m.platform === 'claude' ? 'Claude' : 'AGY'}
+            </span>
+          </td>
+          <td class="num">${m.turns.toLocaleString()}</td>
+          <td class="num">${fmtTokens(m.totalTokens)}</td>
+          <td class="num">${m.cacheHitRate}%</td>
+          <td class="num" style="font-weight: 700; line-height: 1.2;" title="占总消费 ${m.sharePct}%">${fmtUsd(m.costUsd)}<br/><span style="color:var(--text-secondary);font-size:0.63rem;font-weight:normal;">${m.sharePct}%</span></td>
+        </tr>
+      `
+          )
+          .join('') || `<tr><td colspan="6" style="text-align:center;color:var(--text-secondary);padding:1.2rem;">${selectedModelScope === 'today' ? '今日暂无模型调用记录' : '暂无模型记录'}</td></tr>`;
+
+      const projects = (currentSnapshot.projects || []).filter(p => {
+        if (selectedPlatform === 'all') return true;
+        if (selectedPlatform === 'claude') return p.platforms.some(s => s.includes('Claude'));
+        return p.platforms.some(s => s.includes('Antigravity'));
+      });
+      document.getElementById('projects-count-label').textContent = `共 ${projects.length} 个项目`;
+      const projectsTbody = document.getElementById('projects-tbody');
+      projectsTbody.innerHTML =
+        projects
+          .map(
+            p => `
+        <tr>
+          <td style="font-weight: 700;" class="truncate-cell" title="${p.projectPath || p.projectLabel}">${p.projectLabel}</td>
+          <td class="num">${p.sessionsCount}/${p.turns}</td>
+          <td class="num">${fmtTokens(p.totalTokens)}</td>
+          <td class="num" style="font-weight: 700;">${fmtUsd(p.costUsd)}</td>
+        </tr>
+      `
+          )
+          .join('') || `<tr><td colspan="4" style="text-align:center;color:var(--text-secondary);padding:1.2rem;">暂无工作区记录</td></tr>`;
+
+      const q = document.getElementById('session-search').value.trim().toLowerCase();
+      const sessions = (currentSnapshot.recentSessions || []).filter(s => {
+        if (selectedPlatform !== 'all' && s.platform !== selectedPlatform) return false;
+        if (!q) return true;
+        return (
+          s.title.toLowerCase().includes(q) ||
+          s.projectLabel.toLowerCase().includes(q) ||
+          s.models.some(m => m.toLowerCase().includes(q))
+        );
+      });
+
+      const sessionsTbody = document.getElementById('sessions-tbody');
+      sessionsTbody.innerHTML =
+        sessions
+          .map(s => {
+            const dObj = new Date(s.lastTimestamp);
+            const isToday =
+              !Number.isNaN(dObj.getTime()) &&
+              `${dObj.getFullYear()}-${String(dObj.getMonth() + 1).padStart(2, '0')}-${String(dObj.getDate()).padStart(2, '0')}` === todayDate;
+            return `
+        <tr>
+          <td style="color: var(--text-secondary);" title="${new Date(s.lastTimestamp).toLocaleString()}">
+            ${isToday ? '<span class="badge badge-today" style="margin-inline-end:0.25rem;">今日</span>' : ''}${fmtRelativeTime(s.lastTimestamp)}
+          </td>
+          <td>
+            <span class="badge ${s.platform === 'claude' ? 'badge-claude' : 'badge-agy'}">
+              ${s.surface.replace('Claude ', 'C-').replace('Antigravity ', 'AGY-')}
+            </span>
+          </td>
+          <td class="truncate-cell" style="font-weight: 700;" title="${s.title.replace(/"/g, '&quot;')}">
+            ${s.isSubagent ? '↳ ' : ''}${s.title}
+          </td>
+          <td class="truncate-cell session-project-cell" style="color: var(--text-secondary);" title="${s.projectPath}">${s.projectLabel}</td>
+          <td class="num">${s.turnsCount}</td>
+          <td class="num">${fmtTokens(s.totalTokens)}</td>
+          <td class="num" style="font-weight: 700;">${fmtUsd(s.costUsd)}</td>
+        </tr>
+      `;
+          })
+          .join('') || `<tr><td colspan="7" style="text-align:center;color:var(--text-secondary);padding:1.2rem;">未找到匹配的会话记录</td></tr>`;
+
+      document.getElementById('dock-models-count').textContent = models.length;
+      document.getElementById('dock-projects-count').textContent = projects.length;
+      document.getElementById('dock-sessions-count').textContent = sessions.length;
+      document.getElementById('details-summary-badge').textContent = `${models.length}/${projects.length}/${sessions.length}`;
+    }
+
+    function renderAll() {
+      if (!currentSnapshot) return;
+      renderKpisAndToday();
+      renderQuotaCards();
+      renderDailyHeatmap();
+      renderDailyChart();
+      renderHourlyChart();
+      renderTables();
+    }
+
+    // Auto-ResizeObserver for SVG charts & Heatmap
+    const chartResizeObserver = new ResizeObserver(() => {
+      if (currentSnapshot) {
+        renderDailyChart();
+        renderHourlyChart();
+        renderDailyHeatmap();
+      }
+    });
+    chartResizeObserver.observe(document.getElementById('daily-chart-container'));
+    chartResizeObserver.observe(document.getElementById('hourly-chart-container'));
+
+    // -------------------------------------------------------------
+    // Interactive Resizers & Window Layout Customization Engine
+    // -------------------------------------------------------------
+    const cockpitBody = document.getElementById('cockpit-body');
+    const quotaColumn = document.getElementById('quota-column');
+    const chartsColumn = document.getElementById('charts-column');
+    const claudeCard = document.getElementById('card-quota-claude');
+    const agyCard = document.getElementById('card-quota-agy');
+    const heatmapCard = document.getElementById('card-daily-heatmap');
+    const dailyChartCard = document.getElementById('card-chart-daily');
+    const hourlyChartCard = document.getElementById('card-chart-hourly');
+
+    // Restore Swapped States
+    if (localStorage.getItem('voxel-cols-swapped') === 'true' && cockpitBody) {
+      cockpitBody.classList.add('cols-swapped');
+    }
+    if (localStorage.getItem('voxel-charts-swapped') === 'true' && chartsColumn) {
+      chartsColumn.classList.add('charts-swapped');
+    }
+
+    // Restore Column Ratios (Left vs Right)
+    const savedColRatio = localStorage.getItem('voxel-col-ratio');
+    if (savedColRatio && quotaColumn && chartsColumn) {
+      const [qFlex, cFlex] = savedColRatio.split(':').map(Number);
+      if (qFlex && cFlex) {
+        quotaColumn.style.flex = String(qFlex);
+        chartsColumn.style.flex = String(cFlex);
+      }
+    }
+
+    // Restore Chart Height Ratios (Daily vs 24h)
+    const savedChartsRatio = localStorage.getItem('voxel-charts-ratio');
+    if (savedChartsRatio && dailyChartCard && hourlyChartCard) {
+      const [dFlex, hFlex] = savedChartsRatio.split(':').map(Number);
+      if (dFlex && hFlex) {
+        dailyChartCard.style.flex = String(dFlex);
+        hourlyChartCard.style.flex = String(hFlex);
+      }
+    }
+
+    // Drag-and-Drop Card Reordering Setup
+    function setupDragReorder(cards, container, storageKey) {
+      if (!container) return;
+      cards.forEach(card => {
+        if (!card) return;
+        const handle = card.querySelector('.panel-drag-handle');
+        if (!handle) return;
+        handle.setAttribute('draggable', 'true');
+
+        handle.addEventListener('dragstart', e => {
+          e.dataTransfer.setData('text/plain', card.id);
+          card.classList.add('is-dragging');
+        });
+
+        handle.addEventListener('dragend', () => {
+          card.classList.remove('is-dragging');
+          cards.forEach(c => c && c.classList.remove('is-dragover'));
+        });
+
+        card.addEventListener('dragover', e => {
+          e.preventDefault();
+          card.classList.add('is-dragover');
+        });
+
+        card.addEventListener('dragleave', () => {
+          card.classList.remove('is-dragover');
+        });
+
+        card.addEventListener('drop', e => {
+          e.preventDefault();
+          card.classList.remove('is-dragover');
+          const srcId = e.dataTransfer.getData('text/plain');
+          const srcCard = document.getElementById(srcId);
+          if (srcCard && srcCard !== card && srcCard.parentNode === container) {
+            // Reorder cards in DOM
+            const children = Array.from(container.children).filter(el => el.classList.contains('quota-card') || el.classList.contains('chart-card'));
+            const srcIdx = children.indexOf(srcCard);
+            const targetIdx = children.indexOf(card);
+            if (srcIdx < targetIdx) {
+              container.insertBefore(srcCard, card.nextSibling);
+            } else {
+              container.insertBefore(srcCard, card);
+            }
+            const newOrder = Array.from(container.children)
+              .filter(el => el.classList.contains('quota-card') || el.classList.contains('chart-card'))
+              .map(el => el.id);
+            localStorage.setItem(storageKey, JSON.stringify(newOrder));
+          }
+        });
+      });
+
+      // Restore saved DOM order
+      const savedOrderStr = localStorage.getItem(storageKey);
+      if (savedOrderStr) {
+        try {
+          const savedOrder = JSON.parse(savedOrderStr);
+          savedOrder.forEach(id => {
+            const el = document.getElementById(id);
+            if (el && el.parentNode === container) {
+              container.appendChild(el);
+            }
+          });
+        } catch(e) {}
+      }
+    }
+
+    setupDragReorder([claudeCard, agyCard, heatmapCard], quotaColumn, 'voxel-quota-order');
+    setupDragReorder([dailyChartCard, hourlyChartCard], chartsColumn, 'voxel-charts-order');
+
+    // 1. Vertical Splitter between Left Quota Column and Right Charts Column
+    const splitterMainCol = document.getElementById('splitter-main-col');
+    if (splitterMainCol && cockpitBody && quotaColumn && chartsColumn) {
+      splitterMainCol.addEventListener('pointerdown', e => {
+        e.preventDefault();
+        splitterMainCol.classList.add('active');
+        splitterMainCol.setPointerCapture(e.pointerId);
+
+        const bodyRect = cockpitBody.getBoundingClientRect();
+
+        const onPointerMove = moveEv => {
+          const xOffset = moveEv.clientX - bodyRect.left;
+          const totalW = bodyRect.width - 10;
+          const leftRatio = Math.max(0.25, Math.min(0.65, xOffset / totalW));
+          const rightRatio = 1 - leftRatio;
+          quotaColumn.style.flex = leftRatio.toFixed(3);
+          chartsColumn.style.flex = rightRatio.toFixed(3);
+          localStorage.setItem('voxel-col-ratio', `${leftRatio.toFixed(3)}:${rightRatio.toFixed(3)}`);
+        };
+
+        const onPointerUp = () => {
+          splitterMainCol.classList.remove('active');
+          splitterMainCol.removeEventListener('pointermove', onPointerMove);
+          splitterMainCol.removeEventListener('pointerup', onPointerUp);
+        };
+
+        splitterMainCol.addEventListener('pointermove', onPointerMove);
+        splitterMainCol.addEventListener('pointerup', onPointerUp);
+      });
+    }
+
+    // 2. Horizontal Splitter between Daily Chart and Hourly Chart
+    const splitterChartsRow = document.getElementById('splitter-charts-row');
+    if (splitterChartsRow && chartsColumn && dailyChartCard && hourlyChartCard) {
+      splitterChartsRow.addEventListener('pointerdown', e => {
+        e.preventDefault();
+        splitterChartsRow.classList.add('active');
+        splitterChartsRow.setPointerCapture(e.pointerId);
+
+        const chartsRect = chartsColumn.getBoundingClientRect();
+
+        const onPointerMove = moveEv => {
+          const yOffset = moveEv.clientY - chartsRect.top;
+          const totalH = chartsRect.height - 10;
+          const topRatio = Math.max(0.25, Math.min(0.75, yOffset / totalH));
+          const btmRatio = 1 - topRatio;
+          dailyChartCard.style.flex = topRatio.toFixed(3);
+          hourlyChartCard.style.flex = btmRatio.toFixed(3);
+          localStorage.setItem('voxel-charts-ratio', `${topRatio.toFixed(3)}:${btmRatio.toFixed(3)}`);
+        };
+
+        const onPointerUp = () => {
+          splitterChartsRow.classList.remove('active');
+          splitterChartsRow.removeEventListener('pointermove', onPointerMove);
+          splitterChartsRow.removeEventListener('pointerup', onPointerUp);
+        };
+
+        splitterChartsRow.addEventListener('pointermove', onPointerMove);
+        splitterChartsRow.addEventListener('pointerup', onPointerUp);
+      });
+    }
+
+    // Column Swap Button (Left <-> Right)
+    const btnSwapRows = document.getElementById('btn-swap-rows');
+    if (btnSwapRows && cockpitBody) {
+      btnSwapRows.title = '左右对调：配额在左 / 图表在左';
+      btnSwapRows.addEventListener('click', () => {
+        cockpitBody.classList.toggle('cols-swapped');
+        localStorage.setItem('voxel-cols-swapped', String(cockpitBody.classList.contains('cols-swapped')));
+      });
+    }
+
+    // Layout Mode Presets (Standard / Charts Focus / Quota Focus)
+    const layoutModeToggle = document.getElementById('layout-mode-toggle');
+    function applyLayoutMode(mode) {
+      if (!layoutModeToggle || !quotaColumn || !chartsColumn) return;
+      layoutModeToggle.querySelectorAll('button').forEach(b => {
+        b.classList.toggle('active', b.dataset.layout === mode);
+      });
+      if (mode === 'charts-focus') {
+        quotaColumn.style.flex = '3.5';
+        chartsColumn.style.flex = '8.5';
+        localStorage.setItem('voxel-col-ratio', '0.29:0.71');
+      } else if (mode === 'quota-focus') {
+        quotaColumn.style.flex = '6';
+        chartsColumn.style.flex = '6';
+        localStorage.setItem('voxel-col-ratio', '0.50:0.50');
+      } else {
+        quotaColumn.style.flex = '5';
+        chartsColumn.style.flex = '7';
+        dailyChartCard.style.flex = '1';
+        hourlyChartCard.style.flex = '1';
+        localStorage.removeItem('voxel-col-ratio');
+        localStorage.removeItem('voxel-charts-ratio');
+      }
+      localStorage.setItem('voxel-layout-mode', mode);
+    }
+
+    if (layoutModeToggle) {
+      layoutModeToggle.querySelectorAll('button').forEach(btn => {
+        btn.addEventListener('click', () => applyLayoutMode(btn.dataset.layout));
+      });
+      const savedMode = localStorage.getItem('voxel-layout-mode');
+      if (savedMode) applyLayoutMode(savedMode);
+    }
+
+    // Reset Layout Button
+    document.getElementById('btn-reset-layout').addEventListener('click', () => {
+      localStorage.removeItem('voxel-col-ratio');
+      localStorage.removeItem('voxel-charts-ratio');
+      localStorage.removeItem('voxel-quota-order');
+      localStorage.removeItem('voxel-charts-order');
+      localStorage.removeItem('voxel-cols-swapped');
+      localStorage.removeItem('voxel-layout-mode');
+      localStorage.removeItem('voxel-details-dialog-size');
+      localStorage.removeItem('voxel-details-dialog-pos');
+      if (cockpitBody) cockpitBody.classList.remove('cols-swapped');
+      if (chartsColumn) chartsColumn.classList.remove('charts-swapped');
+      if (quotaColumn) quotaColumn.style.flex = '5';
+      if (chartsColumn) chartsColumn.style.flex = '7';
+      if (dailyChartCard) dailyChartCard.style.flex = '1';
+      if (hourlyChartCard) hourlyChartCard.style.flex = '1';
+      // Reset DOM order in left column
+      if (quotaColumn && claudeCard && agyCard && tpCard) {
+        quotaColumn.appendChild(claudeCard);
+        quotaColumn.appendChild(agyCard);
+        quotaColumn.appendChild(tpCard);
+      }
+      // Reset DOM order in right column
+      if (chartsColumn && dailyChartCard && splitterChartsRow && hourlyChartCard) {
+        chartsColumn.appendChild(dailyChartCard);
+        chartsColumn.appendChild(splitterChartsRow);
+        chartsColumn.appendChild(hourlyChartCard);
+      }
+
+      if (layoutModeToggle) {
+        layoutModeToggle.querySelectorAll('button').forEach(b => {
+          b.classList.toggle('active', b.dataset.layout === 'standard');
+        });
+      }
+      const dlg = document.getElementById('details-dialog');
+      if (dlg) {
+        dlg.classList.remove('is-maximized');
+        dlg.style.inlineSize = '';
+        dlg.style.blockSize = '';
+        dlg.style.inset = '';
+        dlg.style.left = '';
+        dlg.style.top = '';
+        dlg.style.position = '';
+        dlg.style.margin = 'auto';
+      }
+    });
+
+    // -------------------------------------------------------------
+    // Draggable & Resizable Modal Dialogs
+    // -------------------------------------------------------------
+    function makeDialogDraggable(dialogEl, headerEl, storageKey) {
+      if (!dialogEl || !headerEl) return;
+
+      headerEl.addEventListener('pointerdown', e => {
+        if (e.target.closest('button, select, input, .segmented')) return;
+        if (dialogEl.classList.contains('is-maximized')) return;
+        e.preventDefault();
+
+        const rect = dialogEl.getBoundingClientRect();
+        const offsetX = e.clientX - rect.left;
+        const offsetY = e.clientY - rect.top;
+
+        // Switch dialog from margin:auto to absolute positioning
+        dialogEl.style.margin = '0';
+        dialogEl.style.position = 'fixed';
+        dialogEl.style.left = rect.left + 'px';
+        dialogEl.style.top = rect.top + 'px';
+
+        const onPointerMove = moveEv => {
+          let left = moveEv.clientX - offsetX;
+          let top = moveEv.clientY - offsetY;
+          left = Math.max(10, Math.min(window.innerWidth - dialogEl.offsetWidth - 10, left));
+          top = Math.max(10, Math.min(window.innerHeight - dialogEl.offsetHeight - 10, top));
+          dialogEl.style.left = left + 'px';
+          dialogEl.style.top = top + 'px';
+          localStorage.setItem(`${storageKey}-pos`, `${left}:${top}`);
+        };
+
+        const onPointerUp = () => {
+          window.removeEventListener('pointermove', onPointerMove);
+          window.removeEventListener('pointerup', onPointerUp);
+        };
+
+        window.addEventListener('pointermove', onPointerMove);
+        window.addEventListener('pointerup', onPointerUp);
+      });
+    }
+
+    const detailsDialog = document.getElementById('details-dialog');
+    const detailsHeader = document.getElementById('details-dialog-header');
+    makeDialogDraggable(detailsDialog, detailsHeader, 'voxel-details-dialog');
+
+    // Restore saved dialog position
+    const savedDetailsPos = localStorage.getItem('voxel-details-dialog-pos');
+    if (savedDetailsPos) {
+      const [l, t] = savedDetailsPos.split(':').map(Number);
+      if (!isNaN(l) && !isNaN(t)) {
+        detailsDialog.style.margin = '0';
+        detailsDialog.style.position = 'fixed';
+        detailsDialog.style.left = `${Math.max(10, Math.min(window.innerWidth - 300, l))}px`;
+        detailsDialog.style.top = `${Math.max(10, Math.min(window.innerHeight - 200, t))}px`;
+      }
+    }
+
+    // Restore saved dialog size
+    const savedDetailsSize = localStorage.getItem('voxel-details-dialog-size');
+    if (savedDetailsSize) {
+      const [w, h] = savedDetailsSize.split(':').map(Number);
+      if (w && h) {
+        detailsDialog.style.inlineSize = `${w}px`;
+        detailsDialog.style.blockSize = `${h}px`;
+      }
+    }
+
+    // Save resized dimensions
+    const detailsResizeObserver = new ResizeObserver(entries => {
+      for (const entry of entries) {
+        if (!detailsDialog.classList.contains('is-maximized') && detailsDialog.open) {
+          const w = Math.round(entry.contentRect.width);
+          const h = Math.round(entry.contentRect.height);
+          if (w > 200 && h > 150) {
+            localStorage.setItem('voxel-details-dialog-size', `${w}:${h}`);
+          }
+        }
+      }
+    });
+    detailsResizeObserver.observe(detailsDialog);
+
+    const settingsDialog = document.getElementById('settings-dialog');
+    const settingsHeader = document.getElementById('settings-dialog-header');
+    makeDialogDraggable(settingsDialog, settingsHeader, 'voxel-settings-dialog');
+
+    // Maximize/Restore Details Dialog
+    const btnMaxDetails = document.getElementById('btn-maximize-details');
+    btnMaxDetails.addEventListener('click', () => {
+      detailsDialog.classList.toggle('is-maximized');
+      btnMaxDetails.textContent = detailsDialog.classList.contains('is-maximized') ? '🗗' : '🗖';
+    });
+
+    // Modern Web Guidance: Top-Layer Exit Fallback for Discrete Display Transitions
+    let supportsDisplayTransition;
+    function canTransitionDisplay() {
+      if (supportsDisplayTransition !== undefined) return supportsDisplayTransition;
+      if (!window.CSS?.supports?.('transition-behavior', 'allow-discrete') || !document.body) {
+        return false;
+      }
+      const probe = document.createElement('div');
+      probe.style.cssText = 'transition: display 1s allow-discrete !important; display: block;';
+      document.body.appendChild(probe);
+      getComputedStyle(probe).display;
+      probe.style.display = 'none';
+      supportsDisplayTransition = getComputedStyle(probe).display === 'block';
+      probe.remove();
+      return supportsDisplayTransition;
+    }
+
+    function supportsTopLayerExit() {
+      return window.CSS?.supports?.('overlay', 'auto') && canTransitionDisplay();
+    }
+
+    async function closeTopLayer(element) {
+      if (!supportsTopLayerExit()) {
+        element.setAttribute('data-closing', '');
+        const animations = element.getAnimations({ subtree: true });
+        if (animations.length > 0) {
+          await Promise.race([
+            Promise.allSettled(animations.map(a => a.finished)),
+            new Promise(r => setTimeout(r, 2000))
+          ]);
+        }
+        if (!element.hasAttribute('data-closing')) return;
+        element.removeAttribute('data-closing');
+      }
+      element.close();
+    }
+
+    // Modern Web Guidance: Light-Dismiss Fallback for Browsers without <dialog closedby="any">
+    if (!('closedBy' in HTMLDialogElement.prototype)) {
+      const outside = (e, dlg) => {
+        const r = dlg.getBoundingClientRect();
+        return e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom;
+      };
+      for (const dlg of document.querySelectorAll('dialog[closedby="any"]')) {
+        let pressedOutside = false;
+        dlg.addEventListener('pointerdown', e => {
+          pressedOutside = outside(e, dlg);
+        });
+        dlg.addEventListener('pointerup', e => {
+          if (pressedOutside && outside(e, dlg)) {
+            closeTopLayer(dlg);
+          }
+        });
+      }
+    }
+
+    for (const dlg of document.querySelectorAll('dialog')) {
+      dlg.addEventListener('cancel', event => {
+        event.preventDefault();
+        closeTopLayer(dlg);
+      });
+    }
+
+    const detailsGrid = document.getElementById('details-modal-grid');
+
+    function setDetailsTab(tabKey) {
+      detailsGrid.dataset.activeTab = tabKey;
+      document.querySelectorAll('#detail-tab-switcher button').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.detailTab === tabKey);
+      });
+    }
+
+    document.querySelectorAll('[data-open-detail]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        setDetailsTab(btn.dataset.openDetail || 'all');
+        detailsDialog.showModal();
+      });
+    });
+
+    document.querySelectorAll('#detail-tab-switcher button').forEach(btn => {
+      btn.addEventListener('click', () => {
+        setDetailsTab(btn.dataset.detailTab);
+      });
+    });
+
+    document.getElementById('btn-close-details').addEventListener('click', () => {
+      closeTopLayer(detailsDialog);
+    });
+
+    document.querySelectorAll('[data-days]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('[data-days]').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        selectedDays = btn.dataset.days;
+        fetchSnapshot();
+      });
+    });
+
+    document.querySelectorAll('[data-platform]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('[data-platform]').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        selectedPlatform = btn.dataset.platform;
+        renderAll();
+      });
+    });
+
+    document.querySelectorAll('#chart-metric-toggle button').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('#chart-metric-toggle button').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        selectedChartMetric = btn.dataset.metric;
+        renderDailyChart();
+      });
+    });
+
+    document.querySelectorAll('#model-scope-toggle button').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('#model-scope-toggle button').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        selectedModelScope = btn.dataset.scope;
+        renderTables();
+      });
+    });
+
+    document.getElementById('session-search').addEventListener('input', () => renderTables());
+    document.getElementById('btn-refresh').addEventListener('click', () => fetchSnapshot());
+
+    document.getElementById('btn-launch-widget').addEventListener('click', async () => {
+      const btn = document.getElementById('btn-launch-widget');
+      const oldText = btn.textContent;
+      btn.textContent = '🟣 启动中...';
+      try {
+        const res = await fetch('/api/launch-widget', { method: 'POST' });
+        const data = await res.json();
+        btn.textContent = data.ok ? '✅ 已呼出' : '⚠️ 失败';
+      } catch {
+        btn.textContent = '⚠️ 失败';
+      }
+      setTimeout(() => { btn.textContent = oldText; }, 1800);
+    });
+
+    document.getElementById('btn-theme-toggle').addEventListener('click', () => {
+      const root = document.documentElement;
+      const curr = root.dataset.theme;
+      const next = curr === 'dark' ? 'light' : 'dark';
+      root.dataset.theme = next;
+      localStorage.setItem('ai-usage-theme', next);
+    });
+
+    document.getElementById('btn-open-settings').addEventListener('click', () => settingsDialog.showModal());
+    document.getElementById('btn-close-dialog').addEventListener('click', () => closeTopLayer(settingsDialog));
+    document.getElementById('btn-cancel-settings').addEventListener('click', () => closeTopLayer(settingsDialog));
+
+    document.getElementById('settings-form').addEventListener('submit', async e => {
+      e.preventDefault();
+      const payload = {
+        claudePlan: document.getElementById('select-claude-plan').value,
+        antigravityPlan: document.getElementById('select-agy-plan').value
+      };
+      await fetch('/api/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      closeTopLayer(settingsDialog);
+      fetchSnapshot();
+    });
+
+    fetchSnapshot();
+    setInterval(fetchSnapshot, 30000);
+  </script>
+</body>
+</html>

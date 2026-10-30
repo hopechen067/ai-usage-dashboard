@@ -1,0 +1,33 @@
+{
+  "name": "ai-usage-dashboard",
+  "version": "1.0.0",
+  "description": "Zero-dependency global usage & subscription quota dashboard + Windows taskbar/floating HUD for Claude Code, Claude Desktop, and Google Antigravity",
+  "type": "module",
+  "license": "MIT",
+  "author": "hopechen067",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hopechen067/ai-usage-dashboard.git"
+  },
+  "keywords": [
+    "claude-code",
+    "claude-desktop",
+    "antigravity",
+    "gemini",
+    "usage-dashboard",
+    "quota-monitor",
+    "floating-ball",
+    "taskbar-widget"
+  ],
+  "scripts": {
+    "start": "node src/server.mjs",
+    "open": "node src/server.mjs --open",
+    "widget": "node src/server.mjs --widget",
+    "cli": "node src/cli.mjs",
+    "hook": "node src/hook-receiver.mjs",
+    "build:icon": "powershell -NoProfile -ExecutionPolicy Bypass -File src/build-icon.ps1"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}
