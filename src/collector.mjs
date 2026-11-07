@@ -12,7 +12,7 @@ const LIVE_QUOTA_FILE = path.join(DATA_DIR, 'live_quota.json');
 const DISK_CACHE_FILE = path.join(DATA_DIR, 'parsed_cache.json');
 
 // Incremental file parse cache: filePath -> { mtimeMs, size, pricingVersion, data }
-const ENGINE_VERSION = 6;
+const ENGINE_VERSION = PRICING_VERSION;
 const fileCache = new Map();
 let cacheDirty = false;
 
@@ -49,6 +49,7 @@ export function loadUserSettings() {
   return {
     claudePlan: 'pro',          // 'pro' | 'max5x' | 'max20x'
     antigravityPlan: 'ultra5x', // 'pro' | 'ultra5x' | 'ultra'
+    timezone: 'Asia/Shanghai',  // 'Asia/Shanghai' (东八区) | 'America/New_York' (美东)
     customClaude5hUsd: null,
     customAgy5hUsd: null
   };
@@ -1000,19 +1001,95 @@ function findDiscreteCycleWindow(sortedTurns, windowDurationMs, nowMs) {
   };
 }
 
-function toLocalDateStr(msOrIso) {
-  const d = new Date(msOrIso);
-  if (Number.isNaN(d.getTime())) return '';
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const dd = String(d.getDate()).padStart(2, '0');
+// Dynamic Timezone Engine: Supports UTC+8 ('Asia/Shanghai' / 东八区) and US Eastern ('America/New_York' / 美东, auto EDT/EST)
+const DAY_MS = 24 * 3600 * 1000;
+let activeTimezoneId = 'Asia/Shanghai';
+
+function normalizeTimezoneId(tz) {
+  if (!tz) return 'Asia/Shanghai';
+  const s = String(tz).trim().toLowerCase();
+  if (s === 'et' || s === 'us-east' || s === 'est' || s === 'edt' || s.includes('new_york') || s.includes('america')) {
+    return 'America/New_York';
+  }
+  return 'Asia/Shanghai';
+}
+
+function getTzLabel(tz = activeTimezoneId) {
+  return normalizeTimezoneId(tz) === 'America/New_York' ? '美东 (ET)' : '东八区 (UTC+8)';
+}
+
+// Compute exact UTC offset in ms for a given timestamp in the active timezone (handles US Eastern DST automatically)
+function getTzOffsetMsAt(tsMs, tz = activeTimezoneId) {
+  const norm = normalizeTimezoneId(tz);
+  if (norm === 'Asia/Shanghai') {
+    return 8 * 3600 * 1000;
+  }
+  // America/New_York: DST starts 2nd Sunday in March at 07:00 UTC (2am EST) and ends 1st Sunday in November at 06:00 UTC (2am EDT)
+  const d = new Date(tsMs);
+  const year = d.getUTCFullYear();
+  // March 1st UTC day of week
+  const mar1Day = new Date(Date.UTC(year, 2, 1)).getUTCDay();
+  const secondSunMar = 8 + ((7 - mar1Day) % 7);
+  const dstStartUtcMs = Date.UTC(year, 2, secondSunMar, 7, 0, 0, 0);
+
+  // November 1st UTC day of week
+  const nov1Day = new Date(Date.UTC(year, 10, 1)).getUTCDay();
+  const firstSunNov = 1 + ((7 - nov1Day) % 7);
+  const dstEndUtcMs = Date.UTC(year, 10, firstSunNov, 6, 0, 0, 0);
+
+  const isEdt = tsMs >= dstStartUtcMs && tsMs < dstEndUtcMs;
+  return (isEdt ? -4 : -5) * 3600 * 1000;
+}
+
+function toTzShiftedDate(msOrIso, tz = activeTimezoneId) {
+  const ts = typeof msOrIso === 'number' ? msOrIso : Date.parse(msOrIso);
+  if (Number.isNaN(ts)) return null;
+  return new Date(ts + getTzOffsetMsAt(ts, tz));
+}
+
+function toLocalDateStr(msOrIso, tz = activeTimezoneId) {
+  const d = toTzShiftedDate(msOrIso, tz);
+  if (!d) return '';
+  const yyyy = d.getUTCFullYear();
+  const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const dd = String(d.getUTCDate()).padStart(2, '0');
   return `${yyyy}-${mm}-${dd}`;
 }
 
-function toLocalHM(ms) {
-  const d = new Date(ms);
-  if (Number.isNaN(d.getTime())) return '--:--';
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+function toLocalHM(msOrIso, tz = activeTimezoneId) {
+  const d = toTzShiftedDate(msOrIso, tz);
+  if (!d) return '--:--';
+  return `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`;
+}
+
+function toLocalHMS(msOrIso, tz = activeTimezoneId) {
+  const d = toTzShiftedDate(msOrIso, tz);
+  if (!d) return '--:--:--';
+  return `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}:${String(d.getUTCSeconds()).padStart(2, '0')}`;
+}
+
+function getTzDayStartMs(msOrIso, tz = activeTimezoneId) {
+  const ts = typeof msOrIso === 'number' ? msOrIso : Date.parse(msOrIso);
+  if (Number.isNaN(ts)) return 0;
+  const offsetMs = getTzOffsetMsAt(ts, tz);
+  const d = new Date(ts + offsetMs);
+  const approxMidnightMs =
+    Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 0, 0, 0, 0) - offsetMs;
+  // Refine once in case a DST boundary was crossed during the day
+  const offsetAtMidnight = getTzOffsetMsAt(approxMidnightMs, tz);
+  return (
+    Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 0, 0, 0, 0) - offsetAtMidnight
+  );
+}
+
+function getTzWeekdayIndex(msOrIso, tz = activeTimezoneId) {
+  const d = toTzShiftedDate(msOrIso, tz);
+  return d ? d.getUTCDay() : 0;
+}
+
+function getTzHour(msOrIso, tz = activeTimezoneId) {
+  const d = toTzShiftedDate(msOrIso, tz);
+  return d ? d.getUTCHours() : 0;
 }
 
 // Compute daily breakdown of 7-day weekly quota + 5-hour windows triggered/used per day
@@ -1061,30 +1138,28 @@ function buildWeeklyDailyBreakdown({
     }
   }
 
-  // 2. Build the calendar days covering [effStartMs .. min(nowMs, effEndMs)] plus full 7-day cycle slots
-  const startDayObj = new Date(effStartMs);
-  startDayObj.setHours(0, 0, 0, 0);
+  // 2. Build the calendar days in active timezone covering [effStartMs .. min(nowMs, effEndMs)]
+  const startDayMs = getTzDayStartMs(effStartMs);
   const endDayBoundMs = Math.max(nowMs, effEndMs - 1000);
-  const endDayObj = new Date(endDayBoundMs);
-  endDayObj.setHours(0, 0, 0, 0);
+  const endDayMs = getTzDayStartMs(endDayBoundMs);
 
   const dayList = [];
   const dayMap = new Map();
-  let cursor = new Date(startDayObj);
+  let cursorMs = startDayMs;
   let safety = 0;
-  while (cursor <= endDayObj && safety < 10) {
+  while (cursorMs <= endDayMs && safety < 10) {
     safety++;
-    const dateStr = toLocalDateStr(cursor.getTime());
-    const dayStartMs = cursor.getTime();
-    const dayEndMs = dayStartMs + 24 * 3600 * 1000;
-    // Effective active slice within the 7d cycle
+    const dateStr = toLocalDateStr(cursorMs + 2 * 3600 * 1000);
+    const dayStartMs = getTzDayStartMs(cursorMs + 2 * 3600 * 1000);
+    const nextDayStartMs = getTzDayStartMs(dayStartMs + 26 * 3600 * 1000);
+    const dayEndMs = nextDayStartMs > dayStartMs ? nextDayStartMs : dayStartMs + DAY_MS;
     const sliceStartMs = Math.max(dayStartMs, effStartMs - START_GRACE_MS);
     const sliceEndMs = Math.min(dayEndMs, effEndMs);
 
     const entry = {
       date: dateStr,
       shortDate: dateStr.slice(5),
-      weekday: weekdays[cursor.getDay()],
+      weekday: weekdays[getTzWeekdayIndex(dayStartMs + 2 * 3600 * 1000)],
       isToday: dateStr === todayStr,
       isFuture: dayStartMs > nowMs,
       isPartialCycleStart: dayStartMs < effStartMs && effStartMs < dayEndMs,
@@ -1104,7 +1179,7 @@ function buildWeeklyDailyBreakdown({
     };
     dayList.push(entry);
     dayMap.set(dateStr, entry);
-    cursor.setDate(cursor.getDate() + 1);
+    cursorMs = dayEndMs;
   }
 
   // 3. Assign turns to days (both strictly inside current 7d cycle and full-day for reference)
@@ -1245,7 +1320,8 @@ function createTpsTracker() {
     peakTps: 0,
     thinkingTimedTurns: 0,
     thinkingTimedTokens: 0,
-    thinkingTimedDurationMs: 0
+    thinkingTimedDurationMs: 0,
+    samples: []
   };
 }
 
@@ -1259,6 +1335,12 @@ function addTurnToTpsTracker(tracker, turn) {
     } else if (tracker.peakTps === 0 && turn.tps > tracker.peakTps) {
       tracker.peakTps = turn.tps;
     }
+    const ts = turn.timestamp ? Date.parse(turn.timestamp) : 0;
+    tracker.samples.push({
+      ts: Number.isNaN(ts) ? 0 : ts,
+      tps: turn.tps,
+      out: turn.outputTokens
+    });
   }
   if (turn.thinkingDurationMs > 0 && turn.thinkingTokens > 0 && turn.thinkingTps > 0) {
     tracker.thinkingTimedTurns += 1;
@@ -1267,7 +1349,7 @@ function addTurnToTpsTracker(tracker, turn) {
   }
 }
 
-function finalizeTpsTracker(tracker) {
+function finalizeTpsTracker(tracker, { includeTrend = false, maxTrendPoints = 20 } = {}) {
   const avgTps =
     tracker.timedDurationMs > 0
       ? Number((tracker.timedOutputTokens / (tracker.timedDurationMs / 1000)).toFixed(1))
@@ -1276,12 +1358,21 @@ function finalizeTpsTracker(tracker) {
     tracker.thinkingTimedDurationMs > 0
       ? Number((tracker.thinkingTimedTokens / (tracker.thinkingTimedDurationMs / 1000)).toFixed(1))
       : 0;
-  return {
+  const result = {
     timedTurns: tracker.timedTurns,
     avgTps,
     peakTps: Number(tracker.peakTps.toFixed(1)),
     avgThinkingTps
   };
+  if (includeTrend) {
+    const sorted = tracker.samples
+      .slice()
+      .sort((a, b) => a.ts - b.ts);
+    const substantial = sorted.filter(s => s.out >= 15);
+    const source = substantial.length >= 2 ? substantial : sorted;
+    result.tpsTrend = source.slice(-maxTrendPoints).map(s => Number(s.tps.toFixed(1)));
+  }
+  return result;
 }
 
 function sumTurnMetrics(arr) {
@@ -1485,8 +1576,8 @@ function computeClaudeQuota(allTurns, settings, liveQuotaEntry, officialHistory)
       }
     }
 
-    const sampleTimeStr = new Date(latestSample.t).toLocaleTimeString();
-    quotaSourceLabel = `已直连 Claude Desktop 官方配额记录 (同步于 ${sampleTimeStr}) · 周期已对齐`;
+    const sampleTimeStr = toLocalHMS(latestSample.t);
+    quotaSourceLabel = `已直连 Claude Desktop 官方配额记录 (同步于 ${sampleTimeStr} ${getTzLabel()}) · 周期已对齐`;
   }
 
   // Step B: Override with Claude Code statusLine live hook if fresher
@@ -1857,9 +1948,10 @@ function computeAntigravityQuota(allTurns, settings, liveQuotaEntry) {
   };
 }
 
-export async function getDashboardSnapshot({ days = 30 } = {}) {
+export async function getDashboardSnapshot({ days = 30, tz = null } = {}) {
   const startPerf = performance.now();
   const settings = loadUserSettings();
+  activeTimezoneId = normalizeTimezoneId(tz || settings.timezone || 'Asia/Shanghai');
 
   // Fetch live Antigravity quota from local language_server.exe RPC (if running) + load Claude official history
   await fetchAntigravityOfficialQuota();
@@ -1880,19 +1972,10 @@ export async function getDashboardSnapshot({ days = 30 } = {}) {
     antigravity: computeAntigravityQuota(allAgyTurns, settings, liveQuota.antigravity)
   };
 
-  // Date range filter for dashboard charts & tables
+  // Date range filter for dashboard charts & tables (using activeTimezoneId)
   const nowMs = Date.now();
-  const nowObj = new Date(nowMs);
-  const todayStartMs = new Date(
-    nowObj.getFullYear(),
-    nowObj.getMonth(),
-    nowObj.getDate(),
-    0,
-    0,
-    0,
-    0
-  ).getTime();
-  const todayDateStr = `${nowObj.getFullYear()}-${String(nowObj.getMonth() + 1).padStart(2, '0')}-${String(nowObj.getDate()).padStart(2, '0')}`;
+  const todayStartMs = getTzDayStartMs(nowMs);
+  const todayDateStr = toLocalDateStr(nowMs);
 
   const cutoffMs =
     days === 'all' || !days
@@ -1912,7 +1995,7 @@ export async function getDashboardSnapshot({ days = 30 } = {}) {
     combined: createTpsTracker()
   };
 
-  // Dedicated Today's real-time statistics (00:00 local time -> now)
+  // Dedicated Today's real-time statistics (00:00 UTC+8 -> now)
   const todayTotals = {
     date: todayDateStr,
     claude: { turns: 0, sessions: 0, inputTokens: 0, cacheWriteTokens: 0, cacheReadTokens: 0, outputTokens: 0, totalTokens: 0, costUsd: 0, cacheSavingsUsd: 0 },
@@ -2005,7 +2088,7 @@ export async function getDashboardSnapshot({ days = 30 } = {}) {
       const pool = m.inputTokens + m.cacheWriteTokens + m.cacheReadTokens;
       return {
         ...m,
-        ...finalizeTpsTracker(tpsTracker),
+        ...finalizeTpsTracker(tpsTracker, { includeTrend: true }),
         cacheHitRate: pool > 0 ? Number(((m.cacheReadTokens / pool) * 100).toFixed(1)) : 0,
         sharePct:
           todayTotals.combined.costUsd > 0
@@ -2020,13 +2103,10 @@ export async function getDashboardSnapshot({ days = 30 } = {}) {
   const annualCutoffMs = Date.now() - 370 * 86400_000;
   for (const session of allSessions) {
     for (const t of session.turns) {
-      const dObj = new Date(t.timestamp);
-      const ts = dObj.getTime();
+      const ts = Date.parse(t.timestamp);
       if (Number.isNaN(ts) || ts < annualCutoffMs) continue;
-      const yyyy = dObj.getFullYear();
-      const mm = String(dObj.getMonth() + 1).padStart(2, '0');
-      const dd = String(dObj.getDate()).padStart(2, '0');
-      const dayKey = `${yyyy}-${mm}-${dd}`;
+      const dayKey = toLocalDateStr(ts);
+      if (!dayKey) continue;
       if (!annualDailyMap.has(dayKey)) {
         annualDailyMap.set(dayKey, {
           date: dayKey,
@@ -2102,13 +2182,10 @@ export async function getDashboardSnapshot({ days = 30 } = {}) {
       sessionModels.add(t.modelLabel || t.model);
       addTurnToTpsTracker(sessionTpsTracker, t);
 
-      // Daily aggregation (local date string YYYY-MM-DD)
-      const dObj = new Date(t.timestamp);
-      if (!Number.isNaN(dObj.getTime())) {
-        const yyyy = dObj.getFullYear();
-        const mm = String(dObj.getMonth() + 1).padStart(2, '0');
-        const dd = String(dObj.getDate()).padStart(2, '0');
-        const dayKey = `${yyyy}-${mm}-${dd}`;
+      // Daily aggregation in UTC+8 (东八区 date string YYYY-MM-DD)
+      const ts = Date.parse(t.timestamp);
+      if (!Number.isNaN(ts)) {
+        const dayKey = toLocalDateStr(ts);
         if (!dailyMap.has(dayKey)) {
           dailyMap.set(dayKey, {
             date: dayKey,
@@ -2135,7 +2212,7 @@ export async function getDashboardSnapshot({ days = 30 } = {}) {
           addTurnToTpsTracker(dayEntry.agyTpsTracker, t);
         }
 
-        const hr = dObj.getHours();
+        const hr = getTzHour(ts);
         if (t.platform === 'claude') hourlyCounts[hr].claudeTurns += 1;
         else hourlyCounts[hr].agyTurns += 1;
         hourlyCounts[hr].tokens += tokSum;
@@ -2256,7 +2333,7 @@ export async function getDashboardSnapshot({ days = 30 } = {}) {
       const pool = m.inputTokens + m.cacheWriteTokens + m.cacheReadTokens;
       return {
         ...m,
-        ...finalizeTpsTracker(tpsTracker),
+        ...finalizeTpsTracker(tpsTracker, { includeTrend: true }),
         cacheHitRate: pool > 0 ? Number(((m.cacheReadTokens / pool) * 100).toFixed(1)) : 0,
         sharePct: totals.combined.costUsd > 0 ? Number(((m.costUsd / totals.combined.costUsd) * 100).toFixed(1)) : 0
       };
@@ -2281,6 +2358,8 @@ export async function getDashboardSnapshot({ days = 30 } = {}) {
   return {
     engineVersion: ENGINE_VERSION,
     generatedAt: new Date().toISOString(),
+    timezone: activeTimezoneId,
+    timezoneLabel: getTzLabel(activeTimezoneId),
     scanDurationMs,
     daysFilter: days,
     settings,
