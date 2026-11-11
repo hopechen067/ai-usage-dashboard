@@ -1,5 +1,31 @@
 #!/usr/bin/env node
-import { getDashboardSnapshot } from './collector.mjs';
+import {
+  getDashboardSnapshot,
+  fetchAntigravityOfficialQuota,
+  getModelRegistrySummary
+} from './collector.mjs';
+import { MODEL_REGISTRY_PATHS } from './model-registry.mjs';
+
+// `node src/cli.mjs models` : sync the live model list from Antigravity & show how each model is priced
+if (process.argv[2] === 'models') {
+  const live = await fetchAntigravityOfficialQuota();
+  if (!live) console.log('[提示] 未能连接到运行中的 Antigravity language_server，仅显示已缓存的模型列表。');
+  // Prime transcript-based discovery too (also refreshes the registry)
+  await getDashboardSnapshot({ days: 1 });
+  const summary = getModelRegistrySummary();
+  console.log(`\n模型注册表更新时间: ${summary.updatedAt || '—'}`);
+  console.log(`文件: ${MODEL_REGISTRY_PATHS.REGISTRY_FILE}`);
+  console.log(`手动定价覆盖(可选): ${MODEL_REGISTRY_PATHS.OVERRIDES_FILE}\n`);
+  const pricingText = { builtin: '内置定价', inherited: '继承估价', override: '手动覆盖', default: '默认估价' };
+  for (const m of summary.models) {
+    const from = m.inheritFrom ? ` ← ${m.inheritFrom}` : '';
+    console.log(
+      `  ${m.label.padEnd(32)} ${m.provider.padEnd(10)} ${m.source.padEnd(20)} ${(pricingText[m.pricing] || m.pricing)}${from}`
+    );
+  }
+  console.log('');
+  process.exit(0);
+}
 
 const daysArg = process.argv[2] || '30';
 const snap = await getDashboardSnapshot({ days: daysArg === 'all' ? 'all' : Number(daysArg) });

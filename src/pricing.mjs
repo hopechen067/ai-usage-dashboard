@@ -1,7 +1,9 @@
 // Model pricing & Subscription Quota estimation engine
 // Prices are in USD per 1M tokens (API-equivalent value for subscription ROI & quota weighting)
 
-export const PRICING_VERSION = 9;
+import { resolveUnknownModel } from './model-registry.mjs';
+
+export const PRICING_VERSION = 14;
 
 // Gemini 4 Argon Official Rates:
 // Thinking effort (low / medium / high) uses the exact same unit price!
@@ -153,6 +155,16 @@ export const MODEL_PRICING = {
     cacheReadPer1M: 0.30,
     quotaWeight: 1.0
   },
+  'claude-fable-5-2': {
+    label: 'Claude Fable 5.2',
+    family: 'Claude Fable',
+    provider: 'Anthropic',
+    inputPer1M: 8.0,
+    outputPer1M: 40.0,
+    cacheWritePer1M: 10.0,
+    cacheReadPer1M: 0.40,
+    quotaWeight: 4.0
+  },
   'claude-fable-5-1': {
     label: 'Claude Fable 5.1',
     family: 'Claude Fable',
@@ -270,10 +282,178 @@ export const MODEL_PRICING = {
     cacheWritePer1M: 0.0,
     cacheReadPer1M: 0.15,
     quotaWeight: 0.6
+  },
+
+  // OpenAI Codex / GPT-6 & GPT-5.6 Series
+  'gpt-6-astra': {
+    label: 'GPT-6-Astra',
+    family: 'GPT-6',
+    provider: 'OpenAI',
+    inputPer1M: 5.0,
+    outputPer1M: 20.0,
+    cacheWritePer1M: 0.0,
+    cacheReadPer1M: 0.50,
+    quotaWeight: 2.0
+  },
+  'gpt-6.1-sol': {
+    label: 'GPT-6.1-Sol',
+    family: 'GPT-6.1',
+    provider: 'OpenAI',
+    inputPer1M: 2.50,
+    outputPer1M: 10.0,
+    cacheWritePer1M: 0.0,
+    cacheReadPer1M: 0.25,
+    quotaWeight: 1.0
+  },
+  'gpt-6.1-terra': {
+    label: 'GPT-6.1 Terra',
+    family: 'GPT-6.1',
+    provider: 'OpenAI',
+    inputPer1M: 2.00,
+    outputPer1M: 8.0,
+    cacheWritePer1M: 0.0,
+    cacheReadPer1M: 0.20,
+    quotaWeight: 0.8
+  },
+  'gpt-6-sol': {
+    label: 'GPT-6-Sol',
+    family: 'GPT-6',
+    provider: 'OpenAI',
+    inputPer1M: 2.00,
+    outputPer1M: 8.0,
+    cacheWritePer1M: 0.0,
+    cacheReadPer1M: 0.20,
+    quotaWeight: 0.8
+  },
+  'gpt-6-luna': {
+    label: 'GPT-6-Luna',
+    family: 'GPT-6',
+    provider: 'OpenAI',
+    inputPer1M: 0.80,
+    outputPer1M: 3.20,
+    cacheWritePer1M: 0.0,
+    cacheReadPer1M: 0.08,
+    quotaWeight: 0.35
+  },
+  'gpt-reserve': {
+    label: 'GPT-Reserve',
+    family: 'GPT-6',
+    provider: 'OpenAI',
+    inputPer1M: 0.60,
+    outputPer1M: 2.40,
+    cacheWritePer1M: 0.0,
+    cacheReadPer1M: 0.06,
+    quotaWeight: 0.25
+  },
+  'gpt-5.6-sol': {
+    label: 'GPT-5.6-Sol',
+    family: 'GPT-5.6',
+    provider: 'OpenAI',
+    inputPer1M: 1.50,
+    outputPer1M: 6.00,
+    cacheWritePer1M: 0.0,
+    cacheReadPer1M: 0.15,
+    quotaWeight: 0.6
+  },
+  'gpt-5.6-terra': {
+    label: 'GPT-5.6-Terra',
+    family: 'GPT-5.6',
+    provider: 'OpenAI',
+    inputPer1M: 1.25,
+    outputPer1M: 5.00,
+    cacheWritePer1M: 0.0,
+    cacheReadPer1M: 0.125,
+    quotaWeight: 0.5
+  },
+  'gpt-5.6-luna': {
+    label: 'GPT-5.6-Luna',
+    family: 'GPT-5.6',
+    provider: 'OpenAI',
+    inputPer1M: 0.40,
+    outputPer1M: 1.60,
+    cacheWritePer1M: 0.0,
+    cacheReadPer1M: 0.04,
+    quotaWeight: 0.2
+  },
+  'codex-auto-review': {
+    label: 'Codex Auto Review',
+    family: 'Codex',
+    provider: 'OpenAI',
+    inputPer1M: 0.40,
+    outputPer1M: 1.60,
+    cacheWritePer1M: 0.0,
+    cacheReadPer1M: 0.04,
+    quotaWeight: 0.2
+  },
+  'gpt-5': {
+    label: 'GPT-5',
+    family: 'GPT-5',
+    provider: 'OpenAI',
+    inputPer1M: 1.25,
+    outputPer1M: 10.0,
+    cacheWritePer1M: 0.0,
+    cacheReadPer1M: 0.125,
+    quotaWeight: 0.8
+  },
+  'o3': {
+    label: 'OpenAI o3',
+    family: 'o-Series',
+    provider: 'OpenAI',
+    inputPer1M: 2.0,
+    outputPer1M: 8.0,
+    cacheWritePer1M: 0.0,
+    cacheReadPer1M: 0.50,
+    quotaWeight: 0.8
+  },
+  'o4-mini': {
+    label: 'OpenAI o4-mini',
+    family: 'o-Series',
+    provider: 'OpenAI',
+    inputPer1M: 1.10,
+    outputPer1M: 4.40,
+    cacheWritePer1M: 0.0,
+    cacheReadPer1M: 0.275,
+    quotaWeight: 0.4
+  },
+  'gpt-4o': {
+    label: 'GPT-4o',
+    family: 'GPT-4o',
+    provider: 'OpenAI',
+    inputPer1M: 2.50,
+    outputPer1M: 10.0,
+    cacheWritePer1M: 0.0,
+    cacheReadPer1M: 1.25,
+    quotaWeight: 1.0
   }
 };
 
 export const SUBSCRIPTION_PLANS = {
+  gpt: {
+    plus: {
+      id: 'plus',
+      name: 'ChatGPT Plus ($20/月)',
+      monthlyPriceUsd: 20,
+      fiveHourBudgetUsd: 45.0,
+      sevenDayBudgetUsd: 315.0,
+      fiveHourTurnsSoftCap: 160
+    },
+    team: {
+      id: 'team',
+      name: 'ChatGPT Team ($30/月)',
+      monthlyPriceUsd: 30,
+      fiveHourBudgetUsd: 90.0,
+      sevenDayBudgetUsd: 630.0,
+      fiveHourTurnsSoftCap: 320
+    },
+    pro: {
+      id: 'pro',
+      name: 'ChatGPT Pro ($200/月)',
+      monthlyPriceUsd: 200,
+      fiveHourBudgetUsd: 900.0,
+      sevenDayBudgetUsd: 6300.0,
+      fiveHourTurnsSoftCap: 3200
+    }
+  },
   claude: {
     pro: {
       id: 'pro',
@@ -347,7 +527,10 @@ export function normalizeModelKey(rawModel = '') {
   if (!m || m === '<synthetic>') return 'unknown';
 
   // Anthropic Claude Family
-  if (m.includes('fable') || m.includes('mythos')) return 'claude-fable-5-1';
+  if (m.includes('fable') || m.includes('mythos')) {
+    if (m.includes('5-1') || m.includes('5.1')) return 'claude-fable-5-1';
+    return 'claude-fable-5-2';
+  }
 
   if (m.includes('opus')) {
     if (m.includes('high')) return 'claude-opus-5-5-high';
@@ -366,7 +549,24 @@ export function normalizeModelKey(rawModel = '') {
   }
 
   if (m.includes('haiku')) return 'claude-haiku-5-5';
-  if (m.includes('gpt-oss') || m.includes('gpt')) return 'gpt-oss-120b';
+  if (m.includes('gpt-oss')) return 'gpt-oss-120b';
+
+  // OpenAI Codex / GPT Family
+  if (m.includes('gpt-6-astra') || m.includes('gpt-6 astra')) return 'gpt-6-astra';
+  if (m.includes('gpt-6.1-sol') || m.includes('gpt-6.1 sol')) return 'gpt-6.1-sol';
+  if (m.includes('gpt-6.1-terra') || m.includes('gpt-6.1 terra')) return 'gpt-6.1-terra';
+  if (m.includes('gpt-6-sol') || m.includes('gpt-6 sol')) return 'gpt-6-sol';
+  if (m.includes('gpt-6-luna') || m.includes('gpt-6 luna')) return 'gpt-6-luna';
+  if (m.includes('gpt-reserve') || m.includes('gpt reserve')) return 'gpt-reserve';
+  if (m.includes('gpt-5.6-sol') || m.includes('gpt-5.6 sol')) return 'gpt-5.6-sol';
+  if (m.includes('gpt-5.6-terra') || m.includes('gpt-5.6 terra')) return 'gpt-5.6-terra';
+  if (m.includes('gpt-5.6-luna') || m.includes('gpt-5.6 luna')) return 'gpt-5.6-luna';
+  if (m.includes('codex-auto-review') || m.includes('auto-review')) return 'codex-auto-review';
+  if (m.includes('o4-mini')) return 'o4-mini';
+  if (m === 'o3' || m.startsWith('o3-')) return 'o3';
+  if (m.includes('gpt-4o')) return 'gpt-4o';
+  if (m.includes('gpt-5')) return 'gpt-5';
+  if (m.includes('gpt')) return 'gpt-6.1-sol';
 
   // Google Flash Family
   if (m.includes('flash')) {
@@ -391,8 +591,41 @@ export function normalizeModelKey(rawModel = '') {
   return m;
 }
 
+const RATE_FIELDS = ['inputPer1M', 'outputPer1M', 'cacheWritePer1M', 'cacheReadPer1M', 'quotaWeight'];
+
+// Models missing from MODEL_PRICING (e.g. a freshly released "Gemini 4 Carbon") are resolved via the
+// dynamic registry: manual override (data/model_overrides.json) > closest known sibling > default.
+function getDynamicModelSpec(rawModel, timestamp) {
+  const info = resolveUnknownModel(rawModel, Object.keys(MODEL_PRICING));
+  if (!info) return null;
+
+  const inherited = info.inheritFrom ? getModelSpec(info.inheritFrom, timestamp) : null;
+  if (!inherited && !info.overrides) return null;
+
+  const spec = {
+    ...(inherited || { inputPer1M: 2.0, outputPer1M: 10.0, cacheWritePer1M: 0.0, cacheReadPer1M: 0.1, quotaWeight: 1.0 }),
+    label: info.label,
+    family: info.family,
+    provider: info.provider
+  };
+  for (const f of RATE_FIELDS) {
+    if (typeof info.overrides?.[f] === 'number') spec[f] = info.overrides[f];
+  }
+  spec.pricingTier = info.overrides ? 'custom' : 'estimated';
+  spec.estimatedFrom = info.overrides ? null : info.inheritFrom;
+  return spec;
+}
+
+export function isKnownModel(rawModel) {
+  return Boolean(MODEL_PRICING[normalizeModelKey(rawModel)]);
+}
+
 export function getModelSpec(rawModel, timestamp = null) {
   const key = normalizeModelKey(rawModel);
+  if (!MODEL_PRICING[key]) {
+    const dyn = getDynamicModelSpec(rawModel, timestamp);
+    if (dyn) return dyn;
+  }
   const baseSpec = MODEL_PRICING[key] || {
     label: rawModel || 'Unknown Model',
     family: 'Other',
@@ -403,6 +636,16 @@ export function getModelSpec(rawModel, timestamp = null) {
     cacheReadPer1M: 0.10,
     quotaWeight: 1.0
   };
+
+  let label = baseSpec.label;
+  if (baseSpec.provider === 'OpenAI' && rawModel && !label.includes('(')) {
+    const m = String(rawModel).toLowerCase();
+    if (m.includes('xhigh')) label = `${label} (xHigh)`;
+    else if (m.includes('high')) label = `${label} (High)`;
+    else if (m.includes('medium')) label = `${label} (Medium)`;
+    else if (m.includes('low')) label = `${label} (Low)`;
+    else if (m.includes('minimal')) label = `${label} (Minimal)`;
+  }
 
   // Dynamic pricing for Gemini 4 Argon:
   // Introductory price ($2 / $10 / $0.10) until 2026-11-30 23:59:59 UTC
@@ -424,7 +667,7 @@ export function getModelSpec(rawModel, timestamp = null) {
     };
   }
 
-  return { ...baseSpec, pricingTier: 'standard' };
+  return { ...baseSpec, label, pricingTier: 'standard' };
 }
 
 export function calculateTurnCost({

@@ -114,6 +114,25 @@ node src/cli.mjs all
 
 ---
 
+## 🧩 新模型自动发现 (Auto Model Discovery)
+
+新模型上线（如 Gemini 4 Carbon）无需改代码即可被识别：
+
+- **自动发现**：每次刷新看板时，从 Antigravity `language_server` 的 `GetUserStatus.clientModelConfigs` 同步实时模型列表，并记录对话日志中出现的未登记模型，保存到 `data/discovered_models.json`。
+- **自动估价**：未在 `pricing.mjs` 内置定价表中的模型，会继承同厂商、同大版本最接近的模型价格（如 Carbon ← Argon，含其日期阶梯价），在 CLI 中标记为「继承估价」。
+- **手动定价覆盖（可选）**：官方价格公布后，创建 `data/model_overrides.json`，保存即实时生效：
+  ```json
+  { "gemini-4-carbon": { "inputPer1M": 3, "outputPer1M": 15, "cacheReadPer1M": 0.15, "quotaWeight": 1.5 } }
+  ```
+  可选字段：`cacheWritePer1M`、`label`、`inheritFrom`（指定继承的内置模型 key）。
+- **查看当前模型列表与定价来源**：`npm run models`
+
+### 按实际调用模型计费 (Per-call Model Attribution)
+
+Antigravity 会话（含 swarm worker 与 `invoke_subagent` 子代理）的每一轮都按**实际调用的模型**计费与归池：从 `~/.gemini/antigravity*/conversations/<id>.db` 的 `gen_metadata` 读取每次 LLM 调用的真实模型，并与对话日志按 token 数对齐；缺失时才回退到 swarm 成员名册 / `invoke_subagent` 参数 / 父会话模型。
+
+---
+
 ## 📁 目录结构 (Project Structure)
 
 ```text

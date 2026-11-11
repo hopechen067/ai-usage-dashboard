@@ -3,7 +3,31 @@ import path from 'node:path';
 import os from 'node:os';
 import { execSync } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
-import { calculateTurnCost, SUBSCRIPTION_PLANS, PRICING_VERSION } from './pricing.mjs';
+import { pathToFileURL } from 'node:url';
+import * as staticPricing from './pricing.mjs';
+import { SUBSCRIPTION_PLANS, PRICING_VERSION } from './pricing.mjs';
+import { syncRpcModels, noteSeenModels, describeRegistry } from './model-registry.mjs';
+
+const PRICING_MODULE_PATH = path.resolve(import.meta.dirname, 'pricing.mjs');
+let activePricing = staticPricing;
+let lastPricingMtimeMs = 0;
+try {
+  lastPricingMtimeMs = fs.statSync(PRICING_MODULE_PATH).mtimeMs;
+} catch {}
+
+async function refreshPricingModule() {
+  try {
+    const mtimeMs = fs.statSync(PRICING_MODULE_PATH).mtimeMs;
+    if (mtimeMs !== lastPricingMtimeMs) {
+      lastPricingMtimeMs = mtimeMs;
+      activePricing = await import(`${pathToFileURL(PRICING_MODULE_PATH).href}?v=${Date.now()}`);
+    }
+  } catch {}
+}
+
+function calculateTurnCost(turn) {
+  return activePricing.calculateTurnCost(turn);
+}
 
 const HOME = os.homedir();
 const DATA_DIR = path.resolve(import.meta.dirname, '..', 'data');
@@ -18,6 +42,8 @@ let cacheDirty = false;
 
 // In-memory cache for Antigravity language_server.exe CSRF token by PID
 let cachedLsAuth = { pid: null, httpPort: null, csrfToken: null, checkedAt: 0 };
+// In-memory throttle cache for Claude OAuth API live quota polling
+let cachedClaudeOAuthQuota = { checkedAt: 0, payload: null };
 
 try {
   if (fs.existsSync(DISK_CACHE_FILE)) {
@@ -41,18 +67,21 @@ function flushDiskCache() {
 }
 
 export function loadUserSettings() {
-  try {
-    if (fs.existsSync(SETTINGS_FILE)) {
-      return JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'));
-    }
-  } catch {}
-  return {
-    claudePlan: 'pro',          // 'pro' | 'max5x' | 'max20x'
+  const defaults = {
+    claudePlan: 'pro',          // 'pro' | 'team' | 'max5x' | 'max20x'
     antigravityPlan: 'ultra5x', // 'pro' | 'ultra5x' | 'ultra'
+    gptPlan: 'plus',            // 'plus' | 'team' | 'pro'
     timezone: 'Asia/Shanghai',  // 'Asia/Shanghai' (东八区) | 'America/New_York' (美东)
     customClaude5hUsd: null,
-    customAgy5hUsd: null
+    customAgy5hUsd: null,
+    customGpt5hUsd: null
   };
+  try {
+    if (fs.existsSync(SETTINGS_FILE)) {
+      return { ...defaults, ...JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8')) };
+    }
+  } catch {}
+  return defaults;
 }
 
 export function saveUserSettings(patch) {
@@ -66,10 +95,10 @@ export function saveUserSettings(patch) {
 export function loadLiveQuota() {
   try {
     if (fs.existsSync(LIVE_QUOTA_FILE)) {
-      return JSON.parse(fs.readFileSync(LIVE_QUOTA_FILE, 'utf8'));
+      return { claude: null, antigravity: null, gpt: null, ...JSON.parse(fs.readFileSync(LIVE_QUOTA_FILE, 'utf8')) };
     }
   } catch {}
-  return { claude: null, antigravity: null };
+  return { claude: null, antigravity: null, gpt: null };
 }
 
 export function saveLiveQuota(platform, payload) {
@@ -417,14 +446,137 @@ function loadAntigravitySummaries(surfaceDir) {
   return summaryMap;
 }
 
+// --- Per-call actual model attribution -------------------------------------------------------
+// Antigravity stores one `gen_metadata` protobuf row per LLM call in <surface>/conversations/<id>.db.
+// Each row carries the real model that served the call (field 1.21 display label such as
+// "Gemini 4 Argon (Low)", field 1.19 base id) plus token usage (1.4.2 input / 1.4.3 output),
+// which lets us attribute every turn to the model that was actually invoked, instead of guessing
+// from "Model Selection" notes, invoke_subagent arguments or the parent conversation.
+function pbReadFields(buf) {
+  const fields = [];
+  let i = 0;
+  const varint = () => {
+    let v = 0n;
+    let s = 0n;
+    let b;
+    do {
+      if (i >= buf.length) throw new Error('eof');
+      b = buf[i++];
+      v |= BigInt(b & 0x7f) << s;
+      s += 7n;
+    } while (b & 0x80);
+    return v;
+  };
+  while (i < buf.length) {
+    const tag = varint();
+    const fn = Number(tag >> 3n);
+    const wt = Number(tag & 7n);
+    if (wt === 0) fields.push({ fn, v: varint() });
+    else if (wt === 1) i += 8;
+    else if (wt === 5) i += 4;
+    else if (wt === 2) {
+      const l = Number(varint());
+      if (i + l > buf.length) throw new Error('len');
+      fields.push({ fn, b: buf.subarray(i, i + l) });
+      i += l;
+    } else throw new Error('wire');
+  }
+  return fields;
+}
+
+function loadGenModelRows(dbPath) {
+  const rows = [];
+  let db;
+  try {
+    db = new DatabaseSync(dbPath, { readOnly: true });
+    for (const r of db.prepare('SELECT data FROM gen_metadata ORDER BY idx').all()) {
+      try {
+        const top = pbReadFields(Buffer.from(r.data));
+        const inner = top.find(f => f.fn === 1 && f.b);
+        if (!inner) {
+          rows.push(null);
+          continue;
+        }
+        const f = pbReadFields(inner.b);
+        const usage = f.find(x => x.fn === 4 && x.b);
+        const u = usage ? pbReadFields(usage.b) : [];
+        const str = fn => {
+          const x = f.find(y => y.fn === fn && y.b);
+          return x ? x.b.toString('utf8') : '';
+        };
+        rows.push({
+          inputTokens: Number(u.find(x => x.fn === 2)?.v ?? -1n),
+          outputTokens: Number(u.find(x => x.fn === 3)?.v ?? -1n),
+          modelId: str(19),
+          label: str(21)
+        });
+      } catch {
+        rows.push(null);
+      }
+    }
+  } catch {
+    return null;
+  } finally {
+    try {
+      db?.close();
+    } catch {}
+  }
+  return rows;
+}
+
+function dbSignature(dbPath) {
+  try {
+    const parts = [dbPath, `${dbPath}-wal`].map(p => {
+      try {
+        const st = fs.statSync(p);
+        return `${st.mtimeMs}:${st.size}`;
+      } catch {
+        return '-';
+      }
+    });
+    return parts.join('|');
+  } catch {
+    return '';
+  }
+}
+
+/** Align transcript turns to gen_metadata rows (same order) and stamp the real model on each turn. */
+function applyGenModels(turns, rows) {
+  if (!rows || rows.length === 0 || turns.length === 0) return 0;
+  const sameCount = rows.length === turns.length;
+  let j = 0;
+  let matched = 0;
+  turns.forEach((t, i) => {
+    let hit = -1;
+    for (let k = j; k < Math.min(rows.length, j + 64); k++) {
+      const r = rows[k];
+      if (r && r.inputTokens === t.inputTokens && r.outputTokens === t.outputTokens) {
+        hit = k;
+        break;
+      }
+    }
+    if (hit < 0 && sameCount && rows[i]) hit = i;
+    if (hit < 0) return;
+    j = hit + 1;
+    const name = rows[hit].label || rows[hit].modelId;
+    if (!name) return;
+    t.model = name;
+    t.modelSource = 'gen_metadata';
+    matched++;
+  });
+  return matched;
+}
+
 function parseAntigravityTranscript(filePath, stat, convId, surfaceLabel, meta = {}) {
   const cacheKey = `${filePath}:${meta.title || ''}:${meta.workspacePath || ''}`;
   const cached = fileCache.get(cacheKey);
+  const dbSig = meta.dbPath ? dbSignature(meta.dbPath) : '';
   if (
     cached &&
     cached.mtimeMs === stat.mtimeMs &&
     cached.size === stat.size &&
     cached.pricingVersion === ENGINE_VERSION &&
+    cached.dbSig === dbSig &&
     cached.data?.spawnedSubagents !== undefined &&
     !cached.data?.turns?.some(t => String(t.model).startsWith('(['))
   ) {
@@ -436,6 +588,7 @@ function parseAntigravityTranscript(filePath, stat, convId, surfaceLabel, meta =
 
   let activeModel = meta.agentName === 'research' ? 'Gemini 3.8 Flash' : 'Gemini 4 Argon (High)';
   let hasExplicitModel = false;
+  let swarmMemberName = '';
   let detectedParentId = meta.parentConversationId || '';
   const spawnedSubagents = {};
   let firstUserPrompt = '';
@@ -485,7 +638,29 @@ function parseAntigravityTranscript(filePath, stat, convId, surfaceLabel, meta =
         }
         if (!firstUserPrompt) {
           const contentMatch = obj.content.match(/content=([^\r\n<]+)/);
-          if (contentMatch) firstUserPrompt = cleanUserPreview(contentMatch[1]);
+          // Swarm workers start with a generic "[swarm] new board message #N" ping; the real
+          // assignment text arrives in the next step (handled below), so don't use the ping as title.
+          if (contentMatch && !/^\[swarm\]/i.test(contentMatch[1].trim())) {
+            firstUserPrompt = cleanUserPreview(contentMatch[1]);
+          }
+        }
+      }
+
+      // Swarm worker: "You have just started. Your assignment (recorded on the board as #1 for @name):\n\n<brief>"
+      if (
+        !swarmMemberName &&
+        idx <= 3 &&
+        obj.type === 'SYSTEM_MESSAGE' &&
+        typeof obj.content === 'string'
+      ) {
+        const asg = obj.content.match(
+          /Your assignment \(recorded on the board as #\d+ for @([\w-]+)\):\s*([\s\S]*?)(?:\r?\n\s*\r?\n|<\/SYSTEM_MESSAGE>|$)/
+        );
+        if (asg) {
+          swarmMemberName = asg[1];
+          const brief = cleanUserPreview(asg[2]);
+          if (brief) firstUserPrompt = `[swarm · ${swarmMemberName}] ${brief}`;
+          else firstUserPrompt = `[swarm · ${swarmMemberName}]`;
         }
       }
 
@@ -628,6 +803,20 @@ function parseAntigravityTranscript(filePath, stat, convId, surfaceLabel, meta =
   }
 
   const finalWorkspace = meta.workspacePath || workspaceFromLogs;
+
+  // Prefer the model that actually served each call (gen_metadata) over inferred models
+  let genMatched = 0;
+  if (meta.dbPath && fs.existsSync(meta.dbPath)) {
+    genMatched = applyGenModels(turns, loadGenModelRows(meta.dbPath));
+    if (genMatched > 0) {
+      for (let ti = 0; ti < turns.length; ti++) {
+        if (turns[ti].modelSource === 'gen_metadata') {
+          turns[ti] = { ...turns[ti], ...calculateTurnCost(turns[ti]) };
+        }
+      }
+    }
+  }
+
   const data = {
     sessionId: convId,
     platform: 'antigravity',
@@ -638,6 +827,8 @@ function parseAntigravityTranscript(filePath, stat, convId, surfaceLabel, meta =
     isSubagent: Boolean(detectedParentId),
     parentConversationId: detectedParentId || null,
     hasExplicitModel,
+    hasGenModels: genMatched > 0,
+    swarmMemberName: swarmMemberName || null,
     spawnedSubagents,
     firstTimestamp: firstTimestamp || new Date(stat.mtimeMs).toISOString(),
     lastTimestamp: lastTimestamp || new Date(stat.mtimeMs).toISOString(),
@@ -648,13 +839,27 @@ function parseAntigravityTranscript(filePath, stat, convId, surfaceLabel, meta =
     mtimeMs: stat.mtimeMs,
     size: stat.size,
     pricingVersion: ENGINE_VERSION,
+    dbSig,
     data
   });
   cacheDirty = true;
   return data;
 }
 
-function scanAllAntigravitySessions() {
+function loadSwarmRoster(convDir, outMap) {
+  const membersPath = path.join(convDir, '.system_generated', 'swarm', 'members.json');
+  try {
+    if (!fs.existsSync(membersPath)) return;
+    const roster = JSON.parse(fs.readFileSync(membersPath, 'utf8'));
+    for (const [name, m] of Object.entries(roster?.members || {})) {
+      if (!m?.conversation_id || m.role === 'coordinator') continue;
+      const model = m.applied_model || m.model || m.desired_model;
+      if (model) outMap.set(m.conversation_id, { name, model });
+    }
+  } catch {}
+}
+
+export function scanAllAntigravitySessions() {
   const surfaces = [
     { dir: 'antigravity', label: 'Antigravity 2.0' },
     { dir: 'antigravity-cli', label: 'Antigravity CLI' },
@@ -662,6 +867,8 @@ function scanAllAntigravitySessions() {
   ];
 
   const sessions = [];
+  // Swarm roster: member conversationId -> { name, model } read from <brain>/<id>/.system_generated/swarm/members.json
+  const swarmModelMap = new Map();
   for (const s of surfaces) {
     const surfaceRoot = path.join(HOME, '.gemini', s.dir);
     const brainDir = path.join(surfaceRoot, 'brain');
@@ -677,11 +884,15 @@ function scanAllAntigravitySessions() {
 
     for (const d of convDirs) {
       const convId = d.name;
+      loadSwarmRoster(path.join(brainDir, convId), swarmModelMap);
       const transcriptPath = path.join(brainDir, convId, '.system_generated', 'logs', 'transcript.jsonl');
       if (!fs.existsSync(transcriptPath)) continue;
       try {
         const stat = fs.statSync(transcriptPath);
-        const meta = summaryMap.get(convId) || {};
+        const meta = {
+          ...(summaryMap.get(convId) || {}),
+          dbPath: path.join(surfaceRoot, 'conversations', `${convId}.db`)
+        };
         const parsed = parseAntigravityTranscript(transcriptPath, stat, convId, s.label, meta);
         if (parsed.turns.length > 0) {
           sessions.push(parsed);
@@ -706,8 +917,13 @@ function scanAllAntigravitySessions() {
     for (const sess of sessions) {
       if (sess.hasExplicitModel) continue;
       const entry = subagentModelMap.get(sess.sessionId);
+      const swarmEntry = swarmModelMap.get(sess.sessionId);
       let resolvedModel = null;
-      if (entry) {
+      if (swarmEntry) {
+        // Swarm member: the roster records the model each worker actually runs on
+        resolvedModel = swarmEntry.model;
+        if (!sess.swarmMemberName) sess.swarmMemberName = swarmEntry.name;
+      } else if (entry) {
         if (entry.model.startsWith('__INHERIT__:')) {
           const parentSess = sessionById.get(entry.parentId);
           resolvedModel =
@@ -721,8 +937,13 @@ function scanAllAntigravitySessions() {
           resolvedModel = parentSess.turns[0].model;
         }
       }
-      if (resolvedModel && sess.turns.length > 0 && sess.turns[0].model !== resolvedModel) {
+      if (
+        resolvedModel &&
+        sess.turns.some(t => t.modelSource !== 'gen_metadata' && t.model !== resolvedModel)
+      ) {
+        // Only fill in turns without a recorded real model; gen_metadata attribution always wins
         sess.turns = sess.turns.map(t => {
+          if (t.modelSource === 'gen_metadata') return t;
           const updatedBase = { ...t, model: resolvedModel };
           return { ...updatedBase, ...calculateTurnCost(updatedBase) };
         });
@@ -731,6 +952,558 @@ function scanAllAntigravitySessions() {
   }
 
   return sessions;
+}
+
+// 2.5 Scan OpenAI / Codex GPT sessions (~/.codex/sessions, state_5.sqlite, logs_2.sqlite)
+function loadCodexAuthInfo() {
+  const authPath = path.join(HOME, '.codex', 'auth.json');
+  if (!fs.existsSync(authPath)) return null;
+  try {
+    const raw = JSON.parse(fs.readFileSync(authPath, 'utf8'));
+    const idToken = raw?.tokens?.id_token;
+    if (!idToken || typeof idToken !== 'string') return null;
+    const parts = idToken.split('.');
+    if (parts.length < 2) return null;
+    const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString('utf8'));
+    const oaiAuth = payload['https://api.openai.com/auth'] || {};
+    return {
+      email: payload.email || null,
+      accountId: oaiAuth.chatgpt_account_id || raw?.account_id || null,
+      planType: oaiAuth.chatgpt_plan_type ? String(oaiAuth.chatgpt_plan_type).toLowerCase() : null,
+      subscriptionStart: oaiAuth.chatgpt_subscription_active_start || null,
+      subscriptionUntil: oaiAuth.chatgpt_subscription_active_until || null
+    };
+  } catch {
+    return null;
+  }
+}
+
+function formatCodexModelWithEffort(rawModel, effort) {
+  const base = rawModel || 'gpt-6.1-sol';
+  if (!effort) return base;
+  const eff = String(effort).toLowerCase();
+  if (eff === 'xhigh') return `${base} (xHigh)`;
+  if (eff === 'high') return `${base} (High)`;
+  if (eff === 'medium') return `${base} (Medium)`;
+  if (eff === 'low') return `${base} (Low)`;
+  if (eff === 'minimal') return `${base} (Minimal)`;
+  return base;
+}
+
+function parseCodexRolloutJsonl(filePath, stat) {
+  const cacheKey = `codex_rollout:${filePath}`;
+  const cached = fileCache.get(cacheKey);
+  if (
+    cached &&
+    cached.mtimeMs === stat.mtimeMs &&
+    cached.size === stat.size &&
+    cached.pricingVersion === ENGINE_VERSION
+  ) {
+    return cached.data;
+  }
+
+  let sessionId = path.basename(filePath, '.jsonl').replace(/^rollout-[^-]+-/, '');
+  let cwd = '';
+  let activeModel = 'gpt-6.1-sol';
+  let activeEffort = '';
+  let firstUserPrompt = '';
+  let firstTimestamp = null;
+  let lastTimestamp = null;
+  let prevTotalTokens = 0;
+  let prevInputTokens = 0;
+  let prevCachedTokens = 0;
+  let prevOutputTokens = 0;
+  let prevReasoningTokens = 0;
+  let lastTurnStartMs = null;
+  let pendingToolCalls = 0;
+  let latestRateLimits = null;
+  const turns = [];
+
+  const content = fs.readFileSync(filePath, 'utf8');
+  const lines = content.split('\n');
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    try {
+      const obj = JSON.parse(line);
+      const tsStr = obj.timestamp || null;
+      const tsMs = tsStr ? Date.parse(tsStr) : NaN;
+      if (tsStr) {
+        if (!firstTimestamp || tsStr < firstTimestamp) firstTimestamp = tsStr;
+        if (!lastTimestamp || tsStr > lastTimestamp) lastTimestamp = tsStr;
+      }
+
+      if (obj.type === 'session_meta' && obj.payload) {
+        if (obj.payload.id) sessionId = obj.payload.id;
+        if (obj.payload.cwd && !cwd) cwd = obj.payload.cwd;
+        if (obj.payload.model) activeModel = obj.payload.model;
+      } else if (obj.type === 'turn_context' && obj.payload) {
+        if (obj.payload.cwd && !cwd) cwd = obj.payload.cwd;
+        if (obj.payload.model) activeModel = obj.payload.model;
+        if (obj.payload.effort || obj.payload.reasoning_effort) {
+          activeEffort = obj.payload.effort || obj.payload.reasoning_effort;
+        }
+        if (!Number.isNaN(tsMs)) lastTurnStartMs = tsMs;
+      } else if (obj.type === 'response_item' && obj.payload) {
+        if (obj.payload.type === 'function_call' || obj.payload.type === 'custom_tool_call') {
+          pendingToolCalls += 1;
+        } else if (obj.payload.type === 'message' && obj.payload.role === 'user' && !firstUserPrompt) {
+          const cArr = Array.isArray(obj.payload.content) ? obj.payload.content : [];
+          for (const c of cArr) {
+            if ((c.type === 'input_text' || c.type === 'text') && c.text) {
+              const cleaned = cleanUserPreview(c.text);
+              if (cleaned) {
+                firstUserPrompt = cleaned;
+                break;
+              }
+            }
+          }
+        }
+      } else if (obj.type === 'event_msg' && obj.payload) {
+        const p = obj.payload;
+        if (p.type === 'user_message' && p.message && !firstUserPrompt) {
+          firstUserPrompt = cleanUserPreview(p.message);
+        }
+        if (p.type === 'task_started' && !Number.isNaN(tsMs)) {
+          lastTurnStartMs = tsMs;
+        }
+        if (p.rate_limits) {
+          latestRateLimits = { ...p.rate_limits, timestamp: tsStr || new Date(stat.mtimeMs).toISOString() };
+        }
+        if (p.type === 'token_count' && p.info) {
+          const lastUsage = p.info.last_token_usage;
+          const totalUsage = p.info.total_token_usage;
+          let inputTokens = 0;
+          let cacheReadTokens = 0;
+          let outputTokens = 0;
+          let thinkingTokens = 0;
+
+          if (lastUsage && (lastUsage.input_tokens > 0 || lastUsage.output_tokens > 0)) {
+            const rawIn = Number(lastUsage.input_tokens || 0);
+            cacheReadTokens = Number(lastUsage.cached_input_tokens || 0);
+            inputTokens = Math.max(0, rawIn - cacheReadTokens);
+            outputTokens = Number(lastUsage.output_tokens || 0);
+            thinkingTokens = Number(lastUsage.reasoning_output_tokens || 0);
+          } else if (totalUsage) {
+            const curIn = Number(totalUsage.input_tokens || 0);
+            const curCached = Number(totalUsage.cached_input_tokens || 0);
+            const curOut = Number(totalUsage.output_tokens || 0);
+            const curReas = Number(totalUsage.reasoning_output_tokens || 0);
+            const curTot = Number(totalUsage.total_tokens || curIn + curOut);
+            if (curTot <= prevTotalTokens) continue;
+            const deltaIn = Math.max(0, curIn - prevInputTokens);
+            cacheReadTokens = Math.max(0, curCached - prevCachedTokens);
+            inputTokens = Math.max(0, deltaIn - cacheReadTokens);
+            outputTokens = Math.max(0, curOut - prevOutputTokens);
+            thinkingTokens = Math.max(0, curReas - prevReasoningTokens);
+            prevInputTokens = curIn;
+            prevCachedTokens = curCached;
+            prevOutputTokens = curOut;
+            prevReasoningTokens = curReas;
+            prevTotalTokens = curTot;
+          }
+
+          if (inputTokens + cacheReadTokens + outputTokens <= 0) continue;
+
+          let durationMs = null;
+          let tps = null;
+          if (lastTurnStartMs && !Number.isNaN(tsMs) && tsMs > lastTurnStartMs) {
+            const rawDur = tsMs - lastTurnStartMs;
+            if (rawDur >= 150 && rawDur <= 600_000 && outputTokens > 0) {
+              const rawTps = outputTokens / (rawDur / 1000);
+              if (rawTps > 0 && rawTps <= 600) {
+                durationMs = Math.round(rawDur);
+                tps = Number(rawTps.toFixed(1));
+              }
+            }
+          }
+          if (!Number.isNaN(tsMs)) lastTurnStartMs = tsMs;
+
+          const modelWithEffort = formatCodexModelWithEffort(activeModel, activeEffort);
+          const turnBase = {
+            id: `${sessionId}_turn_${turns.length + 1}`,
+            platform: 'gpt',
+            surface: 'Codex',
+            sessionId,
+            timestamp: tsStr || lastTimestamp || new Date(stat.mtimeMs).toISOString(),
+            model: modelWithEffort,
+            inputTokens,
+            cacheCreationTokens: 0,
+            cacheReadTokens,
+            outputTokens,
+            thinkingTokens,
+            thinkingDurationMs: null,
+            durationMs,
+            tps,
+            thinkingTps: null,
+            toolCallsCount: pendingToolCalls
+          };
+          pendingToolCalls = 0;
+          const cost = calculateTurnCost(turnBase);
+          turns.push({ ...turnBase, ...cost });
+        }
+      }
+    } catch {}
+  }
+
+  const data = {
+    sessionId,
+    platform: 'gpt',
+    surface: 'Codex',
+    projectPath: cwd,
+    projectLabel: formatWorkspaceLabel(cwd),
+    title: firstUserPrompt || `Codex ${sessionId.slice(0, 8)}`,
+    isSubagent: false,
+    firstTimestamp: firstTimestamp || new Date(stat.mtimeMs).toISOString(),
+    lastTimestamp: lastTimestamp || new Date(stat.mtimeMs).toISOString(),
+    latestRateLimits,
+    turns
+  };
+
+  fileCache.set(cacheKey, {
+    mtimeMs: stat.mtimeMs,
+    size: stat.size,
+    pricingVersion: ENGINE_VERSION,
+    data
+  });
+  cacheDirty = true;
+  return data;
+}
+
+function scanAllGptSessions() {
+  const codexRoot = path.join(HOME, '.codex');
+  if (!fs.existsSync(codexRoot)) return [];
+
+  const sessionMap = new Map();
+
+  // 1. Read default model & reasoning effort from ~/.codex/config.toml
+  let defaultModel = 'gpt-6.1-sol';
+  let defaultEffort = 'high';
+  let defaultProjectPath = '';
+  const configPath = path.join(codexRoot, 'config.toml');
+  if (fs.existsSync(configPath)) {
+    try {
+      const toml = fs.readFileSync(configPath, 'utf8');
+      const mMatch = toml.match(/^\s*model\s*=\s*"([^"]+)"/m);
+      const eMatch = toml.match(/^\s*model_reasoning_effort\s*=\s*"([^"]+)"/m);
+      const pMatch = toml.match(/\[projects\.'([^']+)'\]/);
+      if (mMatch) defaultModel = mMatch[1];
+      if (eMatch) defaultEffort = eMatch[1];
+      if (pMatch) defaultProjectPath = pMatch[1];
+    } catch {}
+  }
+
+  // 2. Scan rollout JSONL files in ~/.codex/sessions and ~/.codex/archived_sessions
+  const walkJsonlDirs = dir => {
+    if (!fs.existsSync(dir)) return;
+    try {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          walkJsonlDirs(full);
+        } else if (entry.isFile() && entry.name.endsWith('.jsonl')) {
+          try {
+            const stat = fs.statSync(full);
+            const parsed = parseCodexRolloutJsonl(full, stat);
+            if (parsed.turns.length > 0) {
+              sessionMap.set(parsed.sessionId, parsed);
+            }
+          } catch {}
+        }
+      }
+    } catch {}
+  };
+  walkJsonlDirs(path.join(codexRoot, 'sessions'));
+  walkJsonlDirs(path.join(codexRoot, 'archived_sessions'));
+
+  // 3. Check ~/.codex/state_5.sqlite (`threads` & `projects`)
+  const stateDbPath = path.join(codexRoot, 'state_5.sqlite');
+  if (fs.existsSync(stateDbPath)) {
+    let db = null;
+    try {
+      db = new DatabaseSync(stateDbPath, { open: true, readOnly: true });
+      if (!defaultProjectPath) {
+        try {
+          const projRow = db.prepare('SELECT path FROM projects LIMIT 1').get();
+          if (projRow?.path) defaultProjectPath = projRow.path;
+        } catch {}
+      }
+      const rows = db.prepare('SELECT * FROM threads').all();
+      for (const r of rows) {
+        if (!r.id) continue;
+        if (r.rollout_path && fs.existsSync(r.rollout_path) && !sessionMap.has(r.id)) {
+          try {
+            const stat = fs.statSync(r.rollout_path);
+            const parsed = parseCodexRolloutJsonl(r.rollout_path, stat);
+            if (parsed.turns.length > 0) {
+              if (r.title || r.first_user_message) {
+                parsed.title = cleanUserPreview(r.title || r.first_user_message) || parsed.title;
+              }
+              if (r.cwd && !parsed.projectPath) {
+                parsed.projectPath = r.cwd;
+                parsed.projectLabel = formatWorkspaceLabel(r.cwd);
+              }
+              sessionMap.set(r.id, parsed);
+              continue;
+            }
+          } catch {}
+        }
+        const totalTok = Number(r.tokens_used || 0);
+        if (totalTok > 0 && !sessionMap.has(r.id)) {
+          const tsIso = r.updated_at
+            ? new Date(Number(r.updated_at) * 1000).toISOString()
+            : new Date().toISOString();
+          const firstIso = r.created_at
+            ? new Date(Number(r.created_at) * 1000).toISOString()
+            : tsIso;
+          const mod = formatCodexModelWithEffort(
+            r.model || defaultModel,
+            r.reasoning_effort || defaultEffort
+          );
+          const cacheReadTokens = Math.round(totalTok * 0.72);
+          const inputTokens = Math.round(totalTok * 0.22);
+          const outputTokens = Math.max(1, totalTok - cacheReadTokens - inputTokens);
+          const turnBase = {
+            id: `${r.id}_state_1`,
+            platform: 'gpt',
+            surface: 'Codex Desktop',
+            sessionId: r.id,
+            timestamp: tsIso,
+            model: mod,
+            inputTokens,
+            cacheCreationTokens: 0,
+            cacheReadTokens,
+            outputTokens,
+            thinkingTokens: 0,
+            thinkingDurationMs: null,
+            durationMs: null,
+            tps: null,
+            thinkingTps: null,
+            toolCallsCount: 0
+          };
+          const cost = calculateTurnCost(turnBase);
+          const cwd = r.cwd || defaultProjectPath;
+          sessionMap.set(r.id, {
+            sessionId: r.id,
+            platform: 'gpt',
+            surface: 'Codex Desktop',
+            projectPath: cwd,
+            projectLabel: formatWorkspaceLabel(cwd),
+            title: cleanUserPreview(r.title || r.name || r.first_user_message) || `Codex ${r.id.slice(0, 8)}`,
+            isSubagent: false,
+            firstTimestamp: firstIso,
+            lastTimestamp: tsIso,
+            turns: [{ ...turnBase, ...cost }]
+          });
+        }
+      }
+    } catch {} finally {
+      try { db?.close(); } catch {}
+    }
+  }
+
+  // 4. Scan ~/.codex/logs_2.sqlite for Codex Desktop / App-Server live turns not yet in sessionMap
+  const logsDbPath = path.join(codexRoot, 'logs_2.sqlite');
+  const logsWalPath = path.join(codexRoot, 'logs_2.sqlite-wal');
+  if (fs.existsSync(logsDbPath)) {
+    const statMain = fs.statSync(logsDbPath);
+    const statWal = fs.existsSync(logsWalPath) ? fs.statSync(logsWalPath) : { mtimeMs: 0, size: 0 };
+    const combinedMtime = Math.max(statMain.mtimeMs, statWal.mtimeMs);
+    const combinedSize = statMain.size + statWal.size;
+    const cacheKey = `codex_logs_db:${logsDbPath}`;
+    const cached = fileCache.get(cacheKey);
+
+    let logSessions = null;
+    if (
+      cached &&
+      cached.mtimeMs === combinedMtime &&
+      cached.size === combinedSize &&
+      cached.pricingVersion === ENGINE_VERSION
+    ) {
+      logSessions = cached.data;
+    } else {
+      let db = null;
+      try {
+        db = new DatabaseSync(logsDbPath, { open: true, readOnly: true });
+        const rows = db
+          .prepare(
+            `SELECT id, ts, ts_nanos, target, thread_id, feedback_log_body
+             FROM logs
+             WHERE thread_id IS NOT NULL
+               AND (
+                 feedback_log_body LIKE '%post sampling token usage%'
+                 OR target = 'feedback_tags'
+                 OR feedback_log_body LIKE '%ToolCall:%'
+               )
+             ORDER BY ts ASC, ts_nanos ASC, id ASC`
+          )
+          .all();
+
+        const byThread = new Map();
+        for (const r of rows) {
+          const tid = r.thread_id;
+          if (!tid) continue;
+          if (!byThread.has(tid)) {
+            byThread.set(tid, {
+              threadId: tid,
+              cwd: defaultProjectPath,
+              model: defaultModel,
+              effort: defaultEffort,
+              firstTsMs: null,
+              lastTsMs: null,
+              lastActivityTsMs: null,
+              pendingTools: 0,
+              prevCumulativeTokens: 0,
+              rawSamplingSteps: []
+            });
+          }
+          const st = byThread.get(tid);
+          const rowTsMs = Number(r.ts) * 1000 + Math.round(Number(r.ts_nanos || 0) / 1e6);
+          if (!st.firstTsMs || rowTsMs < st.firstTsMs) st.firstTsMs = rowTsMs;
+          if (!st.lastTsMs || rowTsMs > st.lastTsMs) st.lastTsMs = rowTsMs;
+
+          const body = String(r.feedback_log_body || '');
+          const cwdMatch = body.match(/\bcwd=([^\s\x1b]+)/);
+          if (cwdMatch && cwdMatch[1]) {
+            st.cwd = cwdMatch[1].replace(/^["']|["']$/g, '');
+          }
+          const modMatch = body.match(/\bmodel=([a-zA-Z0-9._-]+)/);
+          if (modMatch && modMatch[1]) {
+            st.model = modMatch[1];
+          }
+          const effMatch = body.match(/reasoning_effort=([a-zA-Z0-9_-]+)/);
+          if (effMatch && effMatch[1]) {
+            st.effort = effMatch[1];
+          }
+
+          if (body.includes('ToolCall:')) {
+            st.pendingTools += 1;
+            st.lastActivityTsMs = rowTsMs;
+          } else if (r.target === 'feedback_tags' && body.includes('stream_events_utils')) {
+            st.lastActivityTsMs = rowTsMs;
+          } else if (body.includes('post sampling token usage')) {
+            const totMatch = body.match(/total_usage_tokens=(\d+)/);
+            const turnIdMatch = body.match(/turn_id=([0-9a-f-]+)/i);
+            const totalUsageTokens = totMatch ? Number(totMatch[1]) : 0;
+            if (totalUsageTokens > 0) {
+              st.rawSamplingSteps.push({
+                id: r.id,
+                turnId: turnIdMatch ? turnIdMatch[1] : `${tid}_${st.rawSamplingSteps.length + 1}`,
+                tsMs: rowTsMs,
+                startTsMs: st.lastActivityTsMs,
+                totalUsageTokens,
+                model: st.model,
+                effort: st.effort,
+                toolCallsCount: st.pendingTools
+              });
+              st.pendingTools = 0;
+              st.lastActivityTsMs = rowTsMs;
+            }
+          }
+        }
+
+        logSessions = [];
+        for (const st of byThread.values()) {
+          if (st.rawSamplingSteps.length === 0) continue;
+          const turns = [];
+          let prevTotal = 0;
+          for (let idx = 0; idx < st.rawSamplingSteps.length; idx++) {
+            const step = st.rawSamplingSteps[idx];
+            const curTotal = step.totalUsageTokens;
+            let inputTokens = 0;
+            let cacheReadTokens = 0;
+            let outputTokens = 0;
+
+            if (idx === 0 || curTotal < prevTotal) {
+              // First sampling request in thread: initial prompt + system instructions (mostly cached in Codex)
+              cacheReadTokens = Math.round(curTotal * 0.80);
+              outputTokens = Math.min(1200, Math.max(120, Math.round(curTotal * 0.03)));
+              inputTokens = Math.max(0, curTotal - cacheReadTokens - outputTokens);
+            } else {
+              // Subsequent step in same thread: previous context is cached read, delta is new tool output + assistant output
+              const delta = Math.max(100, curTotal - prevTotal);
+              cacheReadTokens = prevTotal;
+              outputTokens = Math.min(2500, Math.max(80, Math.round(delta * 0.35)));
+              inputTokens = Math.max(0, delta - outputTokens);
+            }
+            prevTotal = curTotal;
+
+            let durationMs = null;
+            let tps = null;
+            if (step.startTsMs && step.tsMs > step.startTsMs) {
+              const rawDur = step.tsMs - step.startTsMs;
+              if (rawDur >= 150 && rawDur <= 180_000 && outputTokens > 0) {
+                const rawTps = outputTokens / (rawDur / 1000);
+                if (rawTps > 0 && rawTps <= 500) {
+                  durationMs = Math.round(rawDur);
+                  tps = Number(rawTps.toFixed(1));
+                }
+              }
+            }
+
+            const modelLabelStr = formatCodexModelWithEffort(step.model, step.effort);
+            const turnBase = {
+              id: `${st.threadId}_step_${step.id}`,
+              platform: 'gpt',
+              surface: 'Codex Desktop',
+              sessionId: st.threadId,
+              timestamp: new Date(step.tsMs).toISOString(),
+              model: modelLabelStr,
+              inputTokens,
+              cacheCreationTokens: 0,
+              cacheReadTokens,
+              outputTokens,
+              thinkingTokens: 0,
+              thinkingDurationMs: null,
+              durationMs,
+              tps,
+              thinkingTps: null,
+              toolCallsCount: step.toolCallsCount
+            };
+            const cost = calculateTurnCost(turnBase);
+            turns.push({ ...turnBase, ...cost });
+          }
+
+          const projLabel = formatWorkspaceLabel(st.cwd);
+          logSessions.push({
+            sessionId: st.threadId,
+            platform: 'gpt',
+            surface: 'Codex Desktop',
+            projectPath: st.cwd,
+            projectLabel: projLabel,
+            title: `Codex · ${projLabel.split('/').pop() || st.threadId.slice(0, 8)} (${st.threadId.slice(-6)})`,
+            isSubagent: false,
+            firstTimestamp: new Date(st.firstTsMs || Date.now()).toISOString(),
+            lastTimestamp: new Date(st.lastTsMs || Date.now()).toISOString(),
+            turns
+          });
+        }
+
+        fileCache.set(cacheKey, {
+          mtimeMs: combinedMtime,
+          size: combinedSize,
+          pricingVersion: ENGINE_VERSION,
+          data: logSessions
+        });
+        cacheDirty = true;
+      } catch {
+        logSessions = [];
+      } finally {
+        try { db?.close(); } catch {}
+      }
+    }
+
+    if (Array.isArray(logSessions)) {
+      for (const ls of logSessions) {
+        if (!sessionMap.has(ls.sessionId)) {
+          sessionMap.set(ls.sessionId, ls);
+        }
+      }
+    }
+  }
+
+  return Array.from(sessionMap.values());
 }
 
 // 3. Official Local Quota Discovery: Claude Desktop `plan-usage-history.json` + `.claude.json`
@@ -796,8 +1569,71 @@ function loadClaudeOfficialPlanUsage() {
   return { sourcePath: null, accountInfo, samples: [] };
 }
 
+// 3.5 Official Live Quota Discovery: Claude Code OAuth API (`https://api.anthropic.com/api/oauth/usage`)
+async function fetchClaudeOfficialOAuthQuota() {
+  const now = Date.now();
+  if (cachedClaudeOAuthQuota.payload && now - cachedClaudeOAuthQuota.checkedAt < 45_000) {
+    return cachedClaudeOAuthQuota.payload;
+  }
+  const credPath = path.join(HOME, '.claude', '.credentials.json');
+  if (!fs.existsSync(credPath)) return null;
+
+  try {
+    const raw = JSON.parse(fs.readFileSync(credPath, 'utf8'));
+    const oauth = raw?.claudeAiOauth;
+    const accessToken = oauth?.accessToken;
+    if (!accessToken) return null;
+    if (oauth.expiresAt && Number(oauth.expiresAt) < now - 60_000) return null;
+
+    cachedClaudeOAuthQuota.checkedAt = now;
+    const res = await fetch('https://api.anthropic.com/api/oauth/usage', {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'anthropic-beta': 'oauth-2025-04-20',
+        Accept: 'application/json'
+      },
+      signal: AbortSignal.timeout(2500)
+    }).catch(() => null);
+
+    if (!res?.ok) return cachedClaudeOAuthQuota.payload;
+    const data = await res.json().catch(() => null);
+    if (!data || (!data.five_hour && !data.seven_day)) return cachedClaudeOAuthQuota.payload;
+
+    const fh = data.five_hour;
+    const sd = data.seven_day;
+    const bd = data.seven_day_breakdown;
+
+    const payload = {
+      source: 'claude_oauth_api',
+      fiveHour: fh
+        ? {
+            usedPercentage: typeof fh.utilization === 'number' ? Number(fh.utilization) : null,
+            resetsAt: fh.resets_at || null
+          }
+        : null,
+      sevenDay: sd
+        ? {
+            usedPercentage: typeof sd.utilization === 'number' ? Number(sd.utilization) : null,
+            resetsAt: sd.resets_at || null,
+            windowStartedAt: bd?.window_started_at || null,
+            asOf: bd?.as_of || new Date(now).toISOString()
+          }
+        : null,
+      subscriptionType: oauth.subscriptionType || null,
+      rateLimitTier: oauth.rateLimitTier || null
+    };
+
+    cachedClaudeOAuthQuota.payload = payload;
+    saveLiveQuota('claude', payload);
+    return payload;
+  } catch {
+    return cachedClaudeOAuthQuota.payload;
+  }
+}
+
 // 4. Official Local Quota Discovery: Antigravity `language_server.exe` RPC (`GetUserStatus`)
-async function fetchAntigravityOfficialQuota() {
+export async function fetchAntigravityOfficialQuota() {
   const lsLog = path.join(HOME, 'AppData', 'Roaming', 'Antigravity', 'logs', 'language_server.log');
   if (!fs.existsSync(lsLog)) return null;
 
@@ -910,6 +1746,10 @@ async function fetchAntigravityOfficialQuota() {
 
     // Fallback to GetUserStatus clientModelConfigs if RetrieveUserQuotaSummary wasn't available
     const configs = us.cascadeModelConfigData?.clientModelConfigs || [];
+    // Auto-discover newly released models from the live model list (e.g. Gemini 4 Carbon)
+    try {
+      syncRpcModels(configs);
+    } catch {}
     if (!gemini5h) {
       const geminiConfig =
         configs.find(c => /gemini-4-argon-high/i.test(c.modelId)) ||
@@ -1220,11 +2060,12 @@ function buildWeeklyDailyBreakdown({
     w => w.lastTurnMs >= effStartMs - START_GRACE_MS && w.startMs <= effEndMs
   );
 
-  let cumulativeWeeklyPct = 0;
+  let cumulativeRawPct = 0;
   const formattedDays = dayList.map(d => {
     const m = d.metrics;
     const weeklyQuotaPct = Number(d.rawWeeklyPct.toFixed(2));
-    cumulativeWeeklyPct = Number(Math.min(100, cumulativeWeeklyPct + weeklyQuotaPct).toFixed(1));
+    cumulativeRawPct += d.rawWeeklyPct;
+    const cumulativeWeeklyPct = Number(Math.min(100, cumulativeRawPct).toFixed(1));
     const shareOfUsedPct =
       rawPctSum > 0 ? Number(((d.rawWeeklyPct / rawPctSum) * 100).toFixed(1)) : 0;
 
@@ -1580,21 +2421,51 @@ function computeClaudeQuota(allTurns, settings, liveQuotaEntry, officialHistory)
     quotaSourceLabel = `已直连 Claude Desktop 官方配额记录 (同步于 ${sampleTimeStr} ${getTzLabel()}) · 周期已对齐`;
   }
 
-  // Step B: Override with Claude Code statusLine live hook if fresher
+  // Step B: Override with Claude OAuth API or Claude Code statusLine live quota if fresher
+  const parseResetTimestampMs = val => {
+    if (!val) return NaN;
+    if (typeof val === 'number') return val < 1e11 ? val * 1000 : val;
+    const n = Number(val);
+    if (!Number.isNaN(n) && String(val).trim() !== '') return n < 1e11 ? n * 1000 : n;
+    return Date.parse(val);
+  };
+
   if (liveQuotaEntry?.fiveHour?.resetsAt) {
-    const resetMs = Number(liveQuotaEntry.fiveHour.resetsAt) * 1000;
-    if (resetMs > nowMs) {
+    const resetMs = parseResetTimestampMs(liveQuotaEntry.fiveHour.resetsAt);
+    if (!Number.isNaN(resetMs) && resetMs > nowMs) {
       fiveHourResetsAtMs = resetMs;
       cycle5hStartMs = resetMs - FIVE_H_MS;
       if (typeof liveQuotaEntry.fiveHour.usedPercentage === 'number') {
         fiveHourUsedPct = liveQuotaEntry.fiveHour.usedPercentage;
         isOfficialLiveQuota = true;
-        quotaSourceLabel = '已直连 Claude Code StatusLine 实时配额与重置周期';
       }
     }
   }
-  if (liveQuotaEntry?.sevenDay?.usedPercentage != null) {
-    sevenDayUsedPct = liveQuotaEntry.sevenDay.usedPercentage;
+  if (liveQuotaEntry?.sevenDay) {
+    const sdEntry = liveQuotaEntry.sevenDay;
+    const reset7dMs = parseResetTimestampMs(sdEntry.resetsAt);
+    if (!Number.isNaN(reset7dMs)) {
+      let effReset7dMs = reset7dMs;
+      while (nowMs >= effReset7dMs) {
+        effReset7dMs += SEVEN_D_MS;
+      }
+      const winStartMs = sdEntry.windowStartedAt ? Date.parse(sdEntry.windowStartedAt) : NaN;
+      sevenDayResetsAtMs = effReset7dMs;
+      cycle7dStartMs =
+        !Number.isNaN(winStartMs) && effReset7dMs === reset7dMs
+          ? winStartMs
+          : effReset7dMs - SEVEN_D_MS;
+    }
+    if (typeof sdEntry.usedPercentage === 'number') {
+      sevenDayUsedPct = sdEntry.usedPercentage;
+      isOfficialLiveQuota = true;
+    }
+  }
+  if (liveQuotaEntry?.source === 'claude_oauth_api' && isOfficialLiveQuota) {
+    const syncTs = liveQuotaEntry.sevenDay?.asOf || liveQuotaEntry.updatedAt || new Date(nowMs).toISOString();
+    quotaSourceLabel = `已直连 Claude 官方 OAuth 实时配额 (同步于 ${toLocalHMS(syncTs)} ${getTzLabel()}) · 周期已对齐`;
+  } else if (liveQuotaEntry?.fiveHour?.usedPercentage != null || liveQuotaEntry?.sevenDay?.usedPercentage != null) {
+    quotaSourceLabel = '已直连 Claude Code StatusLine 实时配额与重置周期';
   }
 
   // Step C: Fallback to discrete cycle windows if no official history
@@ -1616,6 +2487,14 @@ function computeClaudeQuota(allTurns, settings, liveQuotaEntry, officialHistory)
   const stats5h = sumTurnMetrics(turns5h);
   const stats7d = sumTurnMetrics(turns7d);
   const stats30d = sumTurnMetrics(turns30d);
+
+  // Calibrate 5h & 7d budgets against live official percentages when available
+  if (!settings.customClaude5hUsd && isOfficialLiveQuota && typeof fiveHourUsedPct === 'number' && fiveHourUsedPct >= 15 && stats5h.costUsd > 2) {
+    fiveHourBudgetUsd = Number((stats5h.costUsd / (fiveHourUsedPct / 100)).toFixed(2));
+  }
+  if (isOfficialLiveQuota && typeof sevenDayUsedPct === 'number' && sevenDayUsedPct >= 8 && stats7d.costUsd > 5) {
+    sevenDayBudgetUsd = Number((stats7d.costUsd / (sevenDayUsedPct / 100)).toFixed(2));
+  }
 
   if (fiveHourUsedPct === null) {
     fiveHourUsedPct = Math.min(100, (stats5h.costUsd / fiveHourBudgetUsd) * 100);
@@ -1948,28 +2827,222 @@ function computeAntigravityQuota(allTurns, settings, liveQuotaEntry) {
   };
 }
 
+function computeGptQuota(allTurns, settings, liveQuotaEntry, codexAuthInfo, latestRolloutRateLimits = null) {
+  const nowMs = Date.now();
+  const FIVE_H_MS = 5 * 3600 * 1000;
+  const SEVEN_D_MS = 7 * 24 * 3600 * 1000;
+  const THIRTY_D_MS = 30 * 24 * 3600 * 1000;
+
+  const sortedTurns = allTurns
+    .map(t => ({ ...t, ts: Date.parse(t.timestamp) }))
+    .filter(t => !Number.isNaN(t.ts))
+    .sort((a, b) => a.ts - b.ts);
+
+  const planCatalog = SUBSCRIPTION_PLANS.gpt;
+  const autoPlanKey =
+    codexAuthInfo?.planType && planCatalog[codexAuthInfo.planType]
+      ? codexAuthInfo.planType
+      : null;
+  const selectedPlanKey = settings.gptPlan || autoPlanKey || 'plus';
+  const plan = planCatalog[selectedPlanKey] || planCatalog.plus;
+
+  const fiveHourBudgetUsd = settings.customGpt5hUsd || plan.fiveHourBudgetUsd;
+  const sevenDayBudgetUsd = plan.sevenDayBudgetUsd;
+
+  let isOfficialLiveQuota = false;
+  let quotaSourceLabel = codexAuthInfo?.email
+    ? `已识别 ChatGPT ${(codexAuthInfo.planType || plan.id).toUpperCase()} 账号 (${codexAuthInfo.email}) · 5h/7d 周期测算`
+    : '离散 5h/7d 周期测算 · Codex 本地日志';
+
+  let cycle5hStartMs = null;
+  let fiveHourResetsAtMs = null;
+  let fiveHourUsedPct = null;
+
+  let cycle7dStartMs = null;
+  let sevenDayResetsAtMs = null;
+  let sevenDayUsedPct = null;
+
+  // Step A: Use rollout rate_limits if present & still active
+  if (latestRolloutRateLimits) {
+    const primary = latestRolloutRateLimits.primary;
+    const secondary = latestRolloutRateLimits.secondary;
+    if (primary && typeof primary.used_percent === 'number') {
+      const resetMs = primary.resets_at ? Number(primary.resets_at) * 1000 : null;
+      if (resetMs && resetMs > nowMs) {
+        fiveHourResetsAtMs = resetMs;
+        cycle5hStartMs = resetMs - FIVE_H_MS;
+        fiveHourUsedPct = Number(primary.used_percent);
+        isOfficialLiveQuota = true;
+        quotaSourceLabel = '已直连 Codex 官方实时配额与重置周期';
+      }
+    }
+    if (secondary && typeof secondary.used_percent === 'number') {
+      const reset7dMs = secondary.resets_at ? Number(secondary.resets_at) * 1000 : null;
+      if (reset7dMs && reset7dMs > nowMs) {
+        sevenDayResetsAtMs = reset7dMs;
+        cycle7dStartMs = reset7dMs - SEVEN_D_MS;
+        sevenDayUsedPct = Number(secondary.used_percent);
+        isOfficialLiveQuota = true;
+      }
+    }
+  }
+
+  // Step B: Override with live_quota.json (`gpt`) if fresher
+  if (liveQuotaEntry?.fiveHour?.resetsAt) {
+    const resetMs =
+      typeof liveQuotaEntry.fiveHour.resetsAt === 'number'
+        ? liveQuotaEntry.fiveHour.resetsAt * 1000
+        : Date.parse(liveQuotaEntry.fiveHour.resetsAt);
+    if (!Number.isNaN(resetMs) && resetMs > nowMs) {
+      fiveHourResetsAtMs = resetMs;
+      cycle5hStartMs = resetMs - FIVE_H_MS;
+      if (typeof liveQuotaEntry.fiveHour.usedPercentage === 'number') {
+        fiveHourUsedPct = liveQuotaEntry.fiveHour.usedPercentage;
+        isOfficialLiveQuota = true;
+        quotaSourceLabel = '已直连 Codex Hook 实时配额与重置周期';
+      }
+    }
+  }
+  if (liveQuotaEntry?.sevenDay?.usedPercentage != null) {
+    sevenDayUsedPct = liveQuotaEntry.sevenDay.usedPercentage;
+  }
+
+  // Step C: Fallback to discrete 5h / 7d cycle windows
+  if (!cycle5hStartMs) {
+    const discrete5h = findDiscreteCycleWindow(sortedTurns, FIVE_H_MS, nowMs);
+    cycle5hStartMs = discrete5h.cycleStartMs;
+    fiveHourResetsAtMs = discrete5h.resetsAtMs;
+  }
+  if (!cycle7dStartMs) {
+    const discrete7d = findDiscreteCycleWindow(sortedTurns, SEVEN_D_MS, nowMs);
+    cycle7dStartMs = discrete7d.cycleStartMs;
+    sevenDayResetsAtMs = discrete7d.resetsAtMs;
+  }
+
+  const turns5h = sortedTurns.filter(t => t.ts >= cycle5hStartMs);
+  const turns7d = sortedTurns.filter(t => t.ts >= cycle7dStartMs);
+  const turns30d = sortedTurns.filter(t => t.ts >= nowMs - THIRTY_D_MS);
+
+  const stats5h = sumTurnMetrics(turns5h);
+  const stats7d = sumTurnMetrics(turns7d);
+  const stats30d = sumTurnMetrics(turns30d);
+
+  if (fiveHourUsedPct === null) {
+    fiveHourUsedPct = Math.min(100, (stats5h.costUsd / fiveHourBudgetUsd) * 100);
+  }
+  if (sevenDayUsedPct === null) {
+    sevenDayUsedPct = Math.min(100, (stats7d.costUsd / sevenDayBudgetUsd) * 100);
+  }
+
+  const roiMultiplier = plan.monthlyPriceUsd > 0 ? stats30d.costUsd / plan.monthlyPriceUsd : 0;
+
+  const dailyBreakdown = buildWeeklyDailyBreakdown({
+    sortedTurns,
+    cycle7dStartMs,
+    sevenDayResetsAtMs,
+    sevenDayUsedPct,
+    sevenDayBudgetUsd,
+    fiveHourBudgetUsd,
+    nowMs
+  });
+
+  return {
+    platform: 'gpt',
+    planId: plan.id,
+    planName: plan.name,
+    monthlyPriceUsd: plan.monthlyPriceUsd,
+    fiveHourBudgetUsd: Number(fiveHourBudgetUsd.toFixed(2)),
+    sevenDayBudgetUsd: Number(sevenDayBudgetUsd.toFixed(2)),
+    isOfficialLiveQuota,
+    quotaSourceLabel,
+    accountEmail: codexAuthInfo?.email || null,
+    subscriptionUntil: codexAuthInfo?.subscriptionUntil || null,
+    fiveHour: {
+      ...stats5h,
+      usedPercentage: Number(fiveHourUsedPct.toFixed(1)),
+      remainingPercentage: Number(Math.max(0, 100 - fiveHourUsedPct).toFixed(1)),
+      cycleStartAt: new Date(cycle5hStartMs).toISOString(),
+      resetsAt: fiveHourResetsAtMs ? new Date(fiveHourResetsAtMs).toISOString() : null
+    },
+    sevenDay: {
+      ...stats7d,
+      usedPercentage: Number(sevenDayUsedPct.toFixed(1)),
+      remainingPercentage: Number(Math.max(0, 100 - sevenDayUsedPct).toFixed(1)),
+      cycleStartAt: new Date(cycle7dStartMs).toISOString(),
+      resetsAt: sevenDayResetsAtMs ? new Date(sevenDayResetsAtMs).toISOString() : null,
+      dailyBreakdown
+    },
+    thirtyDay: {
+      ...stats30d,
+      roiMultiplier: Number(roiMultiplier.toFixed(2)),
+      roiPercentage: Math.round(roiMultiplier * 100)
+    }
+  };
+}
+
+export function getModelRegistrySummary() {
+  return describeRegistry(
+    Object.keys(activePricing.MODEL_PRICING || {}),
+    activePricing.isKnownModel || (() => false)
+  );
+}
+
 export async function getDashboardSnapshot({ days = 30, tz = null } = {}) {
   const startPerf = performance.now();
+  await refreshPricingModule();
   const settings = loadUserSettings();
   activeTimezoneId = normalizeTimezoneId(tz || settings.timezone || 'Asia/Shanghai');
 
-  // Fetch live Antigravity quota from local language_server.exe RPC (if running) + load Claude official history
-  await fetchAntigravityOfficialQuota();
+  // Fetch live Antigravity quota from local language_server.exe RPC (if running) + Claude OAuth live quota + load Claude official history + Codex auth
+  await Promise.all([
+    fetchAntigravityOfficialQuota(),
+    fetchClaudeOfficialOAuthQuota()
+  ]);
   const liveQuota = loadLiveQuota();
   const claudeOfficialHistory = loadClaudeOfficialPlanUsage();
+  const codexAuthInfo = loadCodexAuthInfo();
 
   const claudeSessions = scanAllClaudeSessions();
   const agySessions = scanAllAntigravitySessions();
+  const gptSessions = scanAllGptSessions();
   flushDiskCache();
-  const allSessions = [...claudeSessions, ...agySessions];
+  const allSessions = [...claudeSessions, ...agySessions, ...gptSessions];
+
+  // Dynamically refresh turn pricing & model labels from latest pricing rules
+  const seenModelNames = new Set();
+  for (const session of allSessions) {
+    if (!Array.isArray(session.turns)) continue;
+    for (const t of session.turns) {
+      const cost = calculateTurnCost(t);
+      Object.assign(t, cost);
+      if (t.model) seenModelNames.add(t.model);
+    }
+  }
+  // Record models that are not in the static pricing table so they show up in `cli models`
+  try {
+    if (typeof activePricing.isKnownModel === 'function') {
+      noteSeenModels(seenModelNames, activePricing.isKnownModel);
+    }
+  } catch {}
 
   const allClaudeTurns = claudeSessions.flatMap(s => s.turns);
   const allAgyTurns = agySessions.flatMap(s => s.turns);
+  const allGptTurns = gptSessions.flatMap(s => s.turns);
+
+  let latestGptRateLimits = null;
+  for (const s of gptSessions) {
+    if (s.latestRateLimits) {
+      if (!latestGptRateLimits || (s.latestRateLimits.timestamp || '') > (latestGptRateLimits.timestamp || '')) {
+        latestGptRateLimits = s.latestRateLimits;
+      }
+    }
+  }
 
   // Quota calculations with exact cycle alignment & official quota calibration
   const quotaStatus = {
     claude: computeClaudeQuota(allClaudeTurns, settings, liveQuota.claude, claudeOfficialHistory),
-    antigravity: computeAntigravityQuota(allAgyTurns, settings, liveQuota.antigravity)
+    antigravity: computeAntigravityQuota(allAgyTurns, settings, liveQuota.antigravity),
+    gpt: computeGptQuota(allGptTurns, settings, liveQuota.gpt, codexAuthInfo, latestGptRateLimits)
   };
 
   // Date range filter for dashboard charts & tables (using activeTimezoneId)
@@ -1987,11 +3060,13 @@ export async function getDashboardSnapshot({ days = 30, tz = null } = {}) {
   const totals = {
     claude: { turns: 0, sessions: 0, inputTokens: 0, cacheWriteTokens: 0, cacheReadTokens: 0, outputTokens: 0, totalTokens: 0, costUsd: 0, cacheSavingsUsd: 0 },
     antigravity: { turns: 0, sessions: 0, inputTokens: 0, cacheWriteTokens: 0, cacheReadTokens: 0, outputTokens: 0, totalTokens: 0, costUsd: 0, cacheSavingsUsd: 0 },
+    gpt: { turns: 0, sessions: 0, inputTokens: 0, cacheWriteTokens: 0, cacheReadTokens: 0, outputTokens: 0, totalTokens: 0, costUsd: 0, cacheSavingsUsd: 0 },
     combined: { turns: 0, sessions: 0, inputTokens: 0, cacheWriteTokens: 0, cacheReadTokens: 0, outputTokens: 0, totalTokens: 0, costUsd: 0, cacheSavingsUsd: 0 }
   };
   const totalsTpsTrackers = {
     claude: createTpsTracker(),
     antigravity: createTpsTracker(),
+    gpt: createTpsTracker(),
     combined: createTpsTracker()
   };
 
@@ -2000,11 +3075,13 @@ export async function getDashboardSnapshot({ days = 30, tz = null } = {}) {
     date: todayDateStr,
     claude: { turns: 0, sessions: 0, inputTokens: 0, cacheWriteTokens: 0, cacheReadTokens: 0, outputTokens: 0, totalTokens: 0, costUsd: 0, cacheSavingsUsd: 0 },
     antigravity: { turns: 0, sessions: 0, inputTokens: 0, cacheWriteTokens: 0, cacheReadTokens: 0, outputTokens: 0, totalTokens: 0, costUsd: 0, cacheSavingsUsd: 0, geminiTurns: 0, geminiCostUsd: 0, thirdPartyTurns: 0, thirdPartyCostUsd: 0 },
+    gpt: { turns: 0, sessions: 0, inputTokens: 0, cacheWriteTokens: 0, cacheReadTokens: 0, outputTokens: 0, totalTokens: 0, costUsd: 0, cacheSavingsUsd: 0 },
     combined: { turns: 0, sessions: 0, inputTokens: 0, cacheWriteTokens: 0, cacheReadTokens: 0, outputTokens: 0, totalTokens: 0, costUsd: 0, cacheSavingsUsd: 0 }
   };
   const todayTpsTrackers = {
     claude: createTpsTracker(),
     antigravity: createTpsTracker(),
+    gpt: createTpsTracker(),
     combined: createTpsTracker()
   };
   const todayModelMap = new Map();
@@ -2082,6 +3159,7 @@ export async function getDashboardSnapshot({ days = 30, tz = null } = {}) {
   }
   Object.assign(todayTotals.claude, finalizeTpsTracker(todayTpsTrackers.claude));
   Object.assign(todayTotals.antigravity, finalizeTpsTracker(todayTpsTrackers.antigravity));
+  Object.assign(todayTotals.gpt, finalizeTpsTracker(todayTpsTrackers.gpt));
   Object.assign(todayTotals.combined, finalizeTpsTracker(todayTpsTrackers.combined));
   todayTotals.models = Array.from(todayModelMap.values())
     .map(({ tpsTracker, ...m }) => {
@@ -2112,10 +3190,13 @@ export async function getDashboardSnapshot({ days = 30, tz = null } = {}) {
           date: dayKey,
           claudeTokens: 0,
           agyTokens: 0,
+          gptTokens: 0,
           claudeCostUsd: 0,
           agyCostUsd: 0,
+          gptCostUsd: 0,
           claudeTurns: 0,
-          agyTurns: 0
+          agyTurns: 0,
+          gptTurns: 0
         });
       }
       const entry = annualDailyMap.get(dayKey);
@@ -2124,6 +3205,10 @@ export async function getDashboardSnapshot({ days = 30, tz = null } = {}) {
         entry.claudeTokens += tokSum;
         entry.claudeCostUsd += t.totalCostUsd;
         entry.claudeTurns += 1;
+      } else if (t.platform === 'gpt') {
+        entry.gptTokens += tokSum;
+        entry.gptCostUsd += t.totalCostUsd;
+        entry.gptTurns += 1;
       } else {
         entry.agyTokens += tokSum;
         entry.agyCostUsd += t.totalCostUsd;
@@ -2135,7 +3220,7 @@ export async function getDashboardSnapshot({ days = 30, tz = null } = {}) {
 
   const modelMap = new Map();
   const projectMap = new Map();
-  const hourlyCounts = Array.from({ length: 24 }, (_, h) => ({ hour: h, claudeTurns: 0, agyTurns: 0, tokens: 0 }));
+  const hourlyCounts = Array.from({ length: 24 }, (_, h) => ({ hour: h, claudeTurns: 0, agyTurns: 0, gptTurns: 0, tokens: 0 }));
   const filteredSessions = [];
 
   for (const session of allSessions) {
@@ -2191,12 +3276,16 @@ export async function getDashboardSnapshot({ days = 30, tz = null } = {}) {
             date: dayKey,
             claudeTokens: 0,
             agyTokens: 0,
+            gptTokens: 0,
             claudeCostUsd: 0,
             agyCostUsd: 0,
+            gptCostUsd: 0,
             claudeTurns: 0,
             agyTurns: 0,
+            gptTurns: 0,
             claudeTpsTracker: createTpsTracker(),
-            agyTpsTracker: createTpsTracker()
+            agyTpsTracker: createTpsTracker(),
+            gptTpsTracker: createTpsTracker()
           });
         }
         const dayEntry = dailyMap.get(dayKey);
@@ -2205,6 +3294,11 @@ export async function getDashboardSnapshot({ days = 30, tz = null } = {}) {
           dayEntry.claudeCostUsd += t.totalCostUsd;
           dayEntry.claudeTurns += 1;
           addTurnToTpsTracker(dayEntry.claudeTpsTracker, t);
+        } else if (t.platform === 'gpt') {
+          dayEntry.gptTokens += tokSum;
+          dayEntry.gptCostUsd += t.totalCostUsd;
+          dayEntry.gptTurns += 1;
+          addTurnToTpsTracker(dayEntry.gptTpsTracker, t);
         } else {
           dayEntry.agyTokens += tokSum;
           dayEntry.agyCostUsd += t.totalCostUsd;
@@ -2214,6 +3308,7 @@ export async function getDashboardSnapshot({ days = 30, tz = null } = {}) {
 
         const hr = getTzHour(ts);
         if (t.platform === 'claude') hourlyCounts[hr].claudeTurns += 1;
+        else if (t.platform === 'gpt') hourlyCounts[hr].gptTurns += 1;
         else hourlyCounts[hr].agyTurns += 1;
         hourlyCounts[hr].tokens += tokSum;
       }
@@ -2313,18 +3408,22 @@ export async function getDashboardSnapshot({ days = 30, tz = null } = {}) {
 
   Object.assign(totals.claude, finalizeTpsTracker(totalsTpsTrackers.claude));
   Object.assign(totals.antigravity, finalizeTpsTracker(totalsTpsTrackers.antigravity));
+  Object.assign(totals.gpt, finalizeTpsTracker(totalsTpsTrackers.gpt));
   Object.assign(totals.combined, finalizeTpsTracker(totalsTpsTrackers.combined));
 
   const dailySeries = Array.from(dailyMap.values())
-    .map(({ claudeTpsTracker, agyTpsTracker, ...d }) => {
+    .map(({ claudeTpsTracker, agyTpsTracker, gptTpsTracker, ...d }) => {
       const cTps = finalizeTpsTracker(claudeTpsTracker);
       const aTps = finalizeTpsTracker(agyTpsTracker);
+      const gTps = finalizeTpsTracker(gptTpsTracker);
       return {
         ...d,
         claudeAvgTps: cTps.avgTps,
         claudePeakTps: cTps.peakTps,
         agyAvgTps: aTps.avgTps,
-        agyPeakTps: aTps.peakTps
+        agyPeakTps: aTps.peakTps,
+        gptAvgTps: gTps.avgTps,
+        gptPeakTps: gTps.peakTps
       };
     })
     .sort((a, b) => a.date.localeCompare(b.date));
@@ -2371,6 +3470,7 @@ export async function getDashboardSnapshot({ days = 30, tz = null } = {}) {
     annualDailySeries,
     hourlyCounts,
     models,
+    modelRegistry: getModelRegistrySummary(),
     projects: projects.slice(0, 50),
     recentSessions: filteredSessions.slice(0, 100)
   };

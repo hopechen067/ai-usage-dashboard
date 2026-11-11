@@ -24,6 +24,7 @@
     "open": "node src/server.mjs --open",
     "widget": "node src/server.mjs --widget",
     "cli": "node src/cli.mjs",
+    "models": "node src/cli.mjs models",
     "hook": "node src/hook-receiver.mjs",
     "build:icon": "powershell -NoProfile -ExecutionPolicy Bypass -File src/build-icon.ps1"
   },
