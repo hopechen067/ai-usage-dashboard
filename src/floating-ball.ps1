@@ -1,12 +1,51 @@
-param(
+﻿param(
   [int]$Port = 4321
 )
 
 $ErrorActionPreference = 'Stop'
 
+# 1. 确保临时目录有效且指向用户可写路径，防止普通用户权限下 Add-Type 编译失败 (未能找到源文件 / CS0016)
+$localTemp = [System.IO.Path]::Combine([Environment]::GetFolderPath('LocalApplicationData'), 'Temp')
+if (-not [string]::IsNullOrEmpty($localTemp)) {
+  if (-not (Test-Path $localTemp)) {
+    try { New-Item -ItemType Directory -Path $localTemp -Force | Out-Null } catch {}
+  }
+  if (Test-Path $localTemp) {
+    $env:TEMP = $localTemp
+    $env:TMP = $localTemp
+    [Environment]::SetEnvironmentVariable('TEMP', $localTemp, 'Process')
+    [Environment]::SetEnvironmentVariable('TMP', $localTemp, 'Process')
+  }
+}
+
+# 2. 自动检测并补全 Node.js 路径，防止系统 PATH 损坏或未包含 Node 时拉起后台服务失败
+function Get-NodeExecutable {
+  $cmd = Get-Command "node" -ErrorAction SilentlyContinue
+  if ($cmd -and (Test-Path $cmd.Source)) { return $cmd.Source }
+  $candidates = @(
+    "C:\Program Files\nodejs\node.exe",
+    "C:\Program Files (x86)\nodejs\node.exe",
+    (Join-Path $env:LOCALAPPDATA "Programs\node\node.exe"),
+    (Join-Path $env:APPDATA "npm\node.exe")
+  )
+  foreach ($c in $candidates) {
+    if (Test-Path $c) {
+      $nodeDir = Split-Path -Parent $c
+      if ($env:PATH -notmatch [regex]::Escape($nodeDir)) {
+        $env:PATH = "$nodeDir;$env:PATH"
+      }
+      return $c
+    }
+  }
+  return "node"
+}
+$script:nodeExe = Get-NodeExecutable
+
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $rootDir = Split-Path -Parent $scriptDir
 $serverScript = Join-Path $scriptDir 'server.mjs'
+
+try {
 
 # Ensure single instance using a Local EventWaitHandle + Mutex
 $wakeEventName = "Local\AiUsageFloatingBallWakeEvent_$Port"
@@ -17,7 +56,7 @@ $mutex = New-Object System.Threading.Mutex($true, $mutexName, [ref]$createdNew)
 if (-not $createdNew) {
   if (Test-Path $serverScript) {
     try {
-      Start-Process -FilePath "node" -ArgumentList "`"$serverScript`"" -WorkingDirectory $rootDir -WindowStyle Hidden | Out-Null
+      Start-Process -FilePath $script:nodeExe -ArgumentList "`"$serverScript`"" -WorkingDirectory $rootDir -WindowStyle Hidden | Out-Null
     } catch {}
   }
   try {
@@ -170,7 +209,7 @@ $ballXaml = @"
         Topmost="True"
         ShowInTaskbar="False"
         ResizeMode="NoResize"
-        Width="406"
+        Width="440"
         Height="44">
   <Grid x:Name="BallOuterGrid" Margin="3,2,3,2">
     <Border x:Name="BallRoot"
@@ -183,11 +222,11 @@ $ballXaml = @"
         <DropShadowEffect BlurRadius="8" ShadowDepth="1.5" Direction="270" Color="#000000" Opacity="0.4"/>
       </Border.Effect>
       <Grid>
-        <!-- Mode A: Taskbar Horizontal Strip Layout (400x40 inside 48px Taskbar) -->
-        <Grid x:Name="TaskbarLayoutGrid" Margin="11,4,11,4" Visibility="Visible">
+        <!-- Mode A: Taskbar Horizontal Strip Layout (inside 48px Taskbar) -->
+        <Grid x:Name="TaskbarLayoutGrid" Margin="10,4,10,4" Visibility="Visible">
           <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="114"/>
-            <ColumnDefinition Width="11"/>
+            <ColumnDefinition Width="108"/>
+            <ColumnDefinition Width="9"/>
             <ColumnDefinition Width="*"/>
           </Grid.ColumnDefinitions>
 
@@ -207,37 +246,48 @@ $ballXaml = @"
           </StackPanel>
 
           <!-- Divider -->
-          <Border x:Name="TbDivider" Grid.Column="1" Width="1" Background="#222631" Margin="4,3,5,3"/>
+          <Border x:Name="TbDivider" Grid.Column="1" Width="1" Background="#222631" Margin="3,3,4,3"/>
 
-          <!-- Right: 3 Horizontal Quota Pods (Claude 5H | Gemini 5H | 3P 5H) -->
-          <UniformGrid Grid.Column="2" Rows="1" Columns="3" VerticalAlignment="Center">
+          <!-- Right: 4 Horizontal Quota Pods (Claude 5H | GPT 5H | Gemini 5H | 3P 5H) -->
+          <UniformGrid Grid.Column="2" Rows="1" Columns="4" VerticalAlignment="Center">
             <!-- Pod 1: Claude 5H -->
-            <StackPanel Margin="0,0,5,0" VerticalAlignment="Center">
+            <StackPanel Margin="0,0,3.5,0" VerticalAlignment="Center">
               <Grid Margin="0,0,0,3.5">
-                <TextBlock Text="C" FontSize="9" FontWeight="Bold" Foreground="#D97757" FontFamily="Consolas" HorizontalAlignment="Left" VerticalAlignment="Center"/>
-                <TextBlock x:Name="TbTextC" Text="--%" FontSize="9" FontWeight="Bold" Foreground="#F1F3F5" FontFamily="Consolas" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                <TextBlock Text="C" FontSize="8.8" FontWeight="Bold" Foreground="#D97757" FontFamily="Consolas" HorizontalAlignment="Left" VerticalAlignment="Center"/>
+                <TextBlock x:Name="TbTextC" Text="--%" FontSize="8.8" FontWeight="Bold" Foreground="#F1F3F5" FontFamily="Consolas" HorizontalAlignment="Right" VerticalAlignment="Center"/>
               </Grid>
               <Border x:Name="TbTrackC" Height="4" CornerRadius="2" Background="#1D212B" BorderThickness="0">
                 <Border x:Name="TbFillC" HorizontalAlignment="Left" Width="0" CornerRadius="2" Background="#D97757"/>
               </Border>
             </StackPanel>
 
-            <!-- Pod 2: Gemini 5H -->
-            <StackPanel Margin="2.5,0,2.5,0" VerticalAlignment="Center">
+            <!-- Pod 2: OpenAI / GPT 5H -->
+            <StackPanel Margin="2,0,2,0" VerticalAlignment="Center">
               <Grid Margin="0,0,0,3.5">
-                <TextBlock Text="G" FontSize="9" FontWeight="Bold" Foreground="#5E97F6" FontFamily="Consolas" HorizontalAlignment="Left" VerticalAlignment="Center"/>
-                <TextBlock x:Name="TbTextG" Text="--%" FontSize="9" FontWeight="Bold" Foreground="#F1F3F5" FontFamily="Consolas" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                <TextBlock Text="O" FontSize="8.8" FontWeight="Bold" Foreground="#10B981" FontFamily="Consolas" HorizontalAlignment="Left" VerticalAlignment="Center"/>
+                <TextBlock x:Name="TbTextO" Text="--%" FontSize="8.8" FontWeight="Bold" Foreground="#F1F3F5" FontFamily="Consolas" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+              </Grid>
+              <Border x:Name="TbTrackO" Height="4" CornerRadius="2" Background="#1D212B" BorderThickness="0">
+                <Border x:Name="TbFillO" HorizontalAlignment="Left" Width="0" CornerRadius="2" Background="#10B981"/>
+              </Border>
+            </StackPanel>
+
+            <!-- Pod 3: Gemini 5H -->
+            <StackPanel Margin="2,0,2,0" VerticalAlignment="Center">
+              <Grid Margin="0,0,0,3.5">
+                <TextBlock Text="G" FontSize="8.8" FontWeight="Bold" Foreground="#5E97F6" FontFamily="Consolas" HorizontalAlignment="Left" VerticalAlignment="Center"/>
+                <TextBlock x:Name="TbTextG" Text="--%" FontSize="8.8" FontWeight="Bold" Foreground="#F1F3F5" FontFamily="Consolas" HorizontalAlignment="Right" VerticalAlignment="Center"/>
               </Grid>
               <Border x:Name="TbTrackG" Height="4" CornerRadius="2" Background="#1D212B" BorderThickness="0">
                 <Border x:Name="TbFillG" HorizontalAlignment="Left" Width="0" CornerRadius="2" Background="#5E97F6"/>
               </Border>
             </StackPanel>
 
-            <!-- Pod 3: 3P 5H -->
-            <StackPanel Margin="5,0,0,0" VerticalAlignment="Center">
+            <!-- Pod 4: 3P 5H -->
+            <StackPanel Margin="3.5,0,0,0" VerticalAlignment="Center">
               <Grid Margin="0,0,0,3.5">
-                <TextBlock Text="3P" FontSize="9" FontWeight="Bold" Foreground="#8B95C9" FontFamily="Consolas" HorizontalAlignment="Left" VerticalAlignment="Center"/>
-                <TextBlock x:Name="TbTextTP" Text="--%" FontSize="9" FontWeight="Bold" Foreground="#F1F3F5" FontFamily="Consolas" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                <TextBlock Text="3P" FontSize="8.8" FontWeight="Bold" Foreground="#8B95C9" FontFamily="Consolas" HorizontalAlignment="Left" VerticalAlignment="Center"/>
+                <TextBlock x:Name="TbTextTP" Text="--%" FontSize="8.8" FontWeight="Bold" Foreground="#F1F3F5" FontFamily="Consolas" HorizontalAlignment="Right" VerticalAlignment="Center"/>
               </Grid>
               <Border x:Name="TbTrackTP" Height="4" CornerRadius="2" Background="#1D212B" BorderThickness="0">
                 <Border x:Name="TbFillTP" HorizontalAlignment="Left" Width="0" CornerRadius="2" Background="#8B95C9"/>
@@ -246,7 +296,7 @@ $ballXaml = @"
           </UniformGrid>
         </Grid>
 
-        <!-- Mode B: Free Floating Ball Layout (214x68) -->
+        <!-- Mode B: Free Floating Ball Layout (220x78) -->
         <Grid x:Name="FloatLayoutGrid" Margin="10,6,10,6" Visibility="Collapsed">
           <Grid.ColumnDefinitions>
             <ColumnDefinition Width="70"/>
@@ -267,48 +317,62 @@ $ballXaml = @"
           <!-- Divider -->
           <Border x:Name="BallDivider" Grid.Column="1" Width="1" Background="#222631" Margin="4,2,5,2"/>
 
-          <!-- Right 3 Mini Quota Bars (Claude 5H, Gemini 5H, 3P 5H) -->
+          <!-- Right 4 Mini Quota Bars (Claude 5H, GPT 5H, Gemini 5H, 3P 5H) -->
           <StackPanel Grid.Column="2" VerticalAlignment="Center">
             <!-- Row 1: Claude 5H -->
-            <Grid Margin="0,0,0,4">
+            <Grid Margin="0,0,0,2.5">
               <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="18"/>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="32"/>
               </Grid.ColumnDefinitions>
-              <TextBlock Grid.Column="0" Text="C" FontSize="9" FontWeight="Bold" Foreground="#D97757" FontFamily="Consolas" VerticalAlignment="Center"/>
+              <TextBlock Grid.Column="0" Text="C" FontSize="8.8" FontWeight="Bold" Foreground="#D97757" FontFamily="Consolas" VerticalAlignment="Center"/>
               <Border x:Name="MiniTrackC" Grid.Column="1" Height="4" CornerRadius="2" Background="#1D212B" BorderThickness="0" VerticalAlignment="Center" Margin="2,0,4,0">
                 <Border x:Name="MiniFillC" HorizontalAlignment="Left" Width="0" CornerRadius="2" Background="#D97757"/>
               </Border>
-              <TextBlock x:Name="MiniTextC" Grid.Column="2" Text="--%" FontSize="9" FontWeight="Bold" Foreground="#F1F3F5" FontFamily="Consolas" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+              <TextBlock x:Name="MiniTextC" Grid.Column="2" Text="--%" FontSize="8.8" FontWeight="Bold" Foreground="#F1F3F5" FontFamily="Consolas" HorizontalAlignment="Right" VerticalAlignment="Center"/>
             </Grid>
 
-            <!-- Row 2: Gemini 5H -->
-            <Grid Margin="0,0,0,4">
+            <!-- Row 2: GPT 5H -->
+            <Grid Margin="0,0,0,2.5">
               <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="18"/>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="32"/>
               </Grid.ColumnDefinitions>
-              <TextBlock Grid.Column="0" Text="G" FontSize="9" FontWeight="Bold" Foreground="#5E97F6" FontFamily="Consolas" VerticalAlignment="Center"/>
+              <TextBlock Grid.Column="0" Text="O" FontSize="8.8" FontWeight="Bold" Foreground="#10B981" FontFamily="Consolas" VerticalAlignment="Center"/>
+              <Border x:Name="MiniTrackO" Grid.Column="1" Height="4" CornerRadius="2" Background="#1D212B" BorderThickness="0" VerticalAlignment="Center" Margin="2,0,4,0">
+                <Border x:Name="MiniFillO" HorizontalAlignment="Left" Width="0" CornerRadius="2" Background="#10B981"/>
+              </Border>
+              <TextBlock x:Name="MiniTextO" Grid.Column="2" Text="--%" FontSize="8.8" FontWeight="Bold" Foreground="#F1F3F5" FontFamily="Consolas" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+            </Grid>
+
+            <!-- Row 3: Gemini 5H -->
+            <Grid Margin="0,0,0,2.5">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="18"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="32"/>
+              </Grid.ColumnDefinitions>
+              <TextBlock Grid.Column="0" Text="G" FontSize="8.8" FontWeight="Bold" Foreground="#5E97F6" FontFamily="Consolas" VerticalAlignment="Center"/>
               <Border x:Name="MiniTrackG" Grid.Column="1" Height="4" CornerRadius="2" Background="#1D212B" BorderThickness="0" VerticalAlignment="Center" Margin="2,0,4,0">
                 <Border x:Name="MiniFillG" HorizontalAlignment="Left" Width="0" CornerRadius="2" Background="#5E97F6"/>
               </Border>
-              <TextBlock x:Name="MiniTextG" Grid.Column="2" Text="--%" FontSize="9" FontWeight="Bold" Foreground="#F1F3F5" FontFamily="Consolas" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+              <TextBlock x:Name="MiniTextG" Grid.Column="2" Text="--%" FontSize="8.8" FontWeight="Bold" Foreground="#F1F3F5" FontFamily="Consolas" HorizontalAlignment="Right" VerticalAlignment="Center"/>
             </Grid>
 
-            <!-- Row 3: 3P 5H -->
+            <!-- Row 4: 3P 5H -->
             <Grid>
               <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="18"/>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="32"/>
               </Grid.ColumnDefinitions>
-              <TextBlock Grid.Column="0" Text="3P" FontSize="9" FontWeight="Bold" Foreground="#8B95C9" FontFamily="Consolas" VerticalAlignment="Center"/>
+              <TextBlock Grid.Column="0" Text="3P" FontSize="8.8" FontWeight="Bold" Foreground="#8B95C9" FontFamily="Consolas" VerticalAlignment="Center"/>
               <Border x:Name="MiniTrackTP" Grid.Column="1" Height="4" CornerRadius="2" Background="#1D212B" BorderThickness="0" VerticalAlignment="Center" Margin="2,0,4,0">
                 <Border x:Name="MiniFillTP" HorizontalAlignment="Left" Width="0" CornerRadius="2" Background="#8B95C9"/>
               </Border>
-              <TextBlock x:Name="MiniTextTP" Grid.Column="2" Text="--%" FontSize="9" FontWeight="Bold" Foreground="#F1F3F5" FontFamily="Consolas" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+              <TextBlock x:Name="MiniTextTP" Grid.Column="2" Text="--%" FontSize="8.8" FontWeight="Bold" Foreground="#F1F3F5" FontFamily="Consolas" HorizontalAlignment="Right" VerticalAlignment="Center"/>
             </Grid>
           </StackPanel>
         </Grid>
@@ -411,31 +475,44 @@ $hudXaml = @"
               </Border>
             </Grid>
 
-            <UniformGrid Rows="1" Columns="2">
-              <Border x:Name="PodTodayClaude" CornerRadius="6" Background="#181B22" BorderBrush="#222631" BorderThickness="1" Padding="7,4.5" Margin="0,0,3,0">
+            <UniformGrid Rows="1" Columns="3">
+              <Border x:Name="PodTodayClaude" CornerRadius="6" Background="#181B22" BorderBrush="#222631" BorderThickness="1" Padding="6,4" Margin="0,0,2.5,0">
                 <Grid>
                   <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                   </Grid.ColumnDefinitions>
                   <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-                    <Ellipse Width="5" Height="5" Fill="#D97757" Margin="0,0,5,0" VerticalAlignment="Center"/>
-                    <TextBlock x:Name="LblTodayClaude" Text="Claude" FontSize="9.2" FontWeight="SemiBold" Foreground="#8E95A2" VerticalAlignment="Center"/>
+                    <Ellipse Width="5" Height="5" Fill="#D97757" Margin="0,0,4,0" VerticalAlignment="Center"/>
+                    <TextBlock x:Name="LblTodayClaude" Text="Claude" FontSize="8.8" FontWeight="SemiBold" Foreground="#8E95A2" VerticalAlignment="Center"/>
                   </StackPanel>
-                  <TextBlock x:Name="ValTodayClaude" Grid.Column="1" Text="`$0.00" FontSize="9.2" FontWeight="Bold" Foreground="#F1F3F5" FontFamily="Consolas" VerticalAlignment="Center"/>
+                  <TextBlock x:Name="ValTodayClaude" Grid.Column="1" Text="`$0.00" FontSize="8.8" FontWeight="Bold" Foreground="#F1F3F5" FontFamily="Consolas" VerticalAlignment="Center"/>
                 </Grid>
               </Border>
-              <Border x:Name="PodTodayAgy" CornerRadius="6" Background="#181B22" BorderBrush="#222631" BorderThickness="1" Padding="7,4.5" Margin="3,0,0,0">
+              <Border x:Name="PodTodayAgy" CornerRadius="6" Background="#181B22" BorderBrush="#222631" BorderThickness="1" Padding="6,4" Margin="1.2,0,1.2,0">
                 <Grid>
                   <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                   </Grid.ColumnDefinitions>
                   <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-                    <Ellipse Width="5" Height="5" Fill="#5E97F6" Margin="0,0,5,0" VerticalAlignment="Center"/>
-                    <TextBlock x:Name="LblTodayAgy" Text="Antigravity" FontSize="9.2" FontWeight="SemiBold" Foreground="#8E95A2" VerticalAlignment="Center"/>
+                    <Ellipse Width="5" Height="5" Fill="#5E97F6" Margin="0,0,4,0" VerticalAlignment="Center"/>
+                    <TextBlock x:Name="LblTodayAgy" Text="AGY" FontSize="8.8" FontWeight="SemiBold" Foreground="#8E95A2" VerticalAlignment="Center"/>
                   </StackPanel>
-                  <TextBlock x:Name="ValTodayAgy" Grid.Column="1" Text="`$0.00" FontSize="9.2" FontWeight="Bold" Foreground="#F1F3F5" FontFamily="Consolas" VerticalAlignment="Center"/>
+                  <TextBlock x:Name="ValTodayAgy" Grid.Column="1" Text="`$0.00" FontSize="8.8" FontWeight="Bold" Foreground="#F1F3F5" FontFamily="Consolas" VerticalAlignment="Center"/>
+                </Grid>
+              </Border>
+              <Border x:Name="PodTodayGpt" CornerRadius="6" Background="#181B22" BorderBrush="#222631" BorderThickness="1" Padding="6,4" Margin="2.5,0,0,0">
+                <Grid>
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                  </Grid.ColumnDefinitions>
+                  <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Ellipse Width="5" Height="5" Fill="#10B981" Margin="0,0,4,0" VerticalAlignment="Center"/>
+                    <TextBlock x:Name="LblTodayGpt" Text="GPT" FontSize="8.8" FontWeight="SemiBold" Foreground="#8E95A2" VerticalAlignment="Center"/>
+                  </StackPanel>
+                  <TextBlock x:Name="ValTodayGpt" Grid.Column="1" Text="`$0.00" FontSize="8.8" FontWeight="Bold" Foreground="#F1F3F5" FontFamily="Consolas" VerticalAlignment="Center"/>
                 </Grid>
               </Border>
             </UniformGrid>
@@ -443,31 +520,31 @@ $hudXaml = @"
         </Border>
 
         <!-- Section 2: Claude Code / Desktop Quota Card -->
-        <Border x:Name="CardClaude" CornerRadius="8" BorderThickness="1" Background="#12141A" BorderBrush="#222631" Padding="10,8" Margin="0,0,0,8">
+        <Border x:Name="CardClaude" CornerRadius="8" BorderThickness="1" Background="#12141A" BorderBrush="#222631" Padding="10,7" Margin="0,0,0,6">
           <StackPanel>
-            <Grid Margin="0,0,0,6">
+            <Grid Margin="0,0,0,5">
               <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
               </Grid.ColumnDefinitions>
               <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
                 <Ellipse Width="6" Height="6" Fill="#D97757" Margin="0,0,6,0" VerticalAlignment="Center"/>
-                <TextBlock x:Name="ClaudeHeaderTitle" Text="Claude Code / Desktop" FontSize="10.5" FontWeight="Bold" Foreground="#F1F3F5" FontFamily="Microsoft YaHei UI" VerticalAlignment="Center"/>
+                <TextBlock x:Name="ClaudeHeaderTitle" Text="Claude Code / Desktop" FontSize="10.2" FontWeight="Bold" Foreground="#F1F3F5" FontFamily="Microsoft YaHei UI" VerticalAlignment="Center"/>
               </StackPanel>
               <Border x:Name="ClaudeRoiBadge" Grid.Column="1" CornerRadius="4" Background="#181B22" BorderBrush="#222631" BorderThickness="1" Padding="6,1.5">
-                <TextBlock x:Name="ClaudeRoiText" Text="ROI --%" FontSize="9" FontWeight="SemiBold" Foreground="#8E95A2" FontFamily="Consolas"/>
+                <TextBlock x:Name="ClaudeRoiText" Text="ROI --%" FontSize="8.8" FontWeight="SemiBold" Foreground="#8E95A2" FontFamily="Consolas"/>
               </Border>
             </Grid>
 
             <UniformGrid Rows="1" Columns="2">
               <!-- Claude 5H Box -->
-              <Border x:Name="BoxC5H" CornerRadius="6" Background="#181B22" BorderBrush="#222631" BorderThickness="1" Padding="7,5.5" Margin="0,0,3,0">
+              <Border x:Name="BoxC5H" CornerRadius="6" Background="#181B22" BorderBrush="#222631" BorderThickness="1" Padding="7,5" Margin="0,0,3,0">
                 <StackPanel>
-                  <Grid Margin="0,0,0,4">
-                    <TextBlock x:Name="TitleC5H" Text="5H" FontSize="9.2" FontWeight="SemiBold" Foreground="#8E95A2" HorizontalAlignment="Left"/>
-                    <TextBlock x:Name="PctC5H" Text="--%" FontSize="9.2" FontWeight="Bold" Foreground="#D97757" FontFamily="Consolas" HorizontalAlignment="Right"/>
+                  <Grid Margin="0,0,0,3.5">
+                    <TextBlock x:Name="TitleC5H" Text="5H" FontSize="9" FontWeight="SemiBold" Foreground="#8E95A2" HorizontalAlignment="Left"/>
+                    <TextBlock x:Name="PctC5H" Text="--%" FontSize="9" FontWeight="Bold" Foreground="#D97757" FontFamily="Consolas" HorizontalAlignment="Right"/>
                   </Grid>
-                  <UniformGrid x:Name="BarC5H" Rows="1" Columns="12" Height="5" Margin="0,0,0,4"/>
+                  <UniformGrid x:Name="BarC5H" Rows="1" Columns="12" Height="5" Margin="0,0,0,3.5"/>
                   <Grid>
                     <TextBlock x:Name="MetaC5H" Text="`$0/`$0" FontSize="8.5" Foreground="#686F7C" FontFamily="Consolas" HorizontalAlignment="Left"/>
                     <TextBlock x:Name="ResetC5H" Text="--" FontSize="8.5" FontWeight="SemiBold" Foreground="#8E95A2" FontFamily="Consolas" HorizontalAlignment="Right"/>
@@ -476,16 +553,67 @@ $hudXaml = @"
               </Border>
 
               <!-- Claude 7D Box -->
-              <Border x:Name="BoxC7D" CornerRadius="6" Background="#181B22" BorderBrush="#222631" BorderThickness="1" Padding="7,5.5" Margin="3,0,0,0">
+              <Border x:Name="BoxC7D" CornerRadius="6" Background="#181B22" BorderBrush="#222631" BorderThickness="1" Padding="7,5" Margin="3,0,0,0">
                 <StackPanel>
-                  <Grid Margin="0,0,0,4">
-                    <TextBlock x:Name="TitleC7D" Text="7D" FontSize="9.2" FontWeight="SemiBold" Foreground="#8E95A2" HorizontalAlignment="Left"/>
-                    <TextBlock x:Name="PctC7D" Text="--%" FontSize="9.2" FontWeight="Bold" Foreground="#D97757" FontFamily="Consolas" HorizontalAlignment="Right"/>
+                  <Grid Margin="0,0,0,3.5">
+                    <TextBlock x:Name="TitleC7D" Text="7D" FontSize="9" FontWeight="SemiBold" Foreground="#8E95A2" HorizontalAlignment="Left"/>
+                    <TextBlock x:Name="PctC7D" Text="--%" FontSize="9" FontWeight="Bold" Foreground="#D97757" FontFamily="Consolas" HorizontalAlignment="Right"/>
                   </Grid>
-                  <UniformGrid x:Name="BarC7D" Rows="1" Columns="12" Height="5" Margin="0,0,0,4"/>
+                  <UniformGrid x:Name="BarC7D" Rows="1" Columns="12" Height="5" Margin="0,0,0,3.5"/>
                   <Grid>
                     <TextBlock x:Name="MetaC7D" Text="`$0/`$0" FontSize="8.5" Foreground="#686F7C" FontFamily="Consolas" HorizontalAlignment="Left"/>
                     <TextBlock x:Name="ResetC7D" Text="--" FontSize="8.5" FontWeight="SemiBold" Foreground="#8E95A2" FontFamily="Consolas" HorizontalAlignment="Right"/>
+                  </Grid>
+                </StackPanel>
+              </Border>
+            </UniformGrid>
+          </StackPanel>
+        </Border>
+
+        <!-- Section 2.5: OpenAI Codex / GPT Quota Card -->
+        <Border x:Name="CardGpt" CornerRadius="8" BorderThickness="1" Background="#12141A" BorderBrush="#222631" Padding="10,7" Margin="0,0,0,6">
+          <StackPanel>
+            <Grid Margin="0,0,0,5">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+              </Grid.ColumnDefinitions>
+              <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                <Ellipse Width="6" Height="6" Fill="#10B981" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                <TextBlock x:Name="GptHeaderTitle" Text="OpenAI Codex / GPT" FontSize="10.2" FontWeight="Bold" Foreground="#F1F3F5" FontFamily="Microsoft YaHei UI" VerticalAlignment="Center"/>
+              </StackPanel>
+              <Border x:Name="GptRoiBadge" Grid.Column="1" CornerRadius="4" Background="#181B22" BorderBrush="#222631" BorderThickness="1" Padding="6,1.5">
+                <TextBlock x:Name="GptRoiText" Text="ROI --%" FontSize="8.8" FontWeight="SemiBold" Foreground="#8E95A2" FontFamily="Consolas"/>
+              </Border>
+            </Grid>
+
+            <UniformGrid Rows="1" Columns="2">
+              <!-- GPT 5H Box -->
+              <Border x:Name="BoxO5H" CornerRadius="6" Background="#181B22" BorderBrush="#222631" BorderThickness="1" Padding="7,5" Margin="0,0,3,0">
+                <StackPanel>
+                  <Grid Margin="0,0,0,3.5">
+                    <TextBlock x:Name="TitleO5H" Text="GPT 5H" FontSize="9" FontWeight="SemiBold" Foreground="#8E95A2" HorizontalAlignment="Left"/>
+                    <TextBlock x:Name="PctO5H" Text="--%" FontSize="9" FontWeight="Bold" Foreground="#10B981" FontFamily="Consolas" HorizontalAlignment="Right"/>
+                  </Grid>
+                  <UniformGrid x:Name="BarO5H" Rows="1" Columns="12" Height="5" Margin="0,0,0,3.5"/>
+                  <Grid>
+                    <TextBlock x:Name="MetaO5H" Text="`$0/`$0" FontSize="8.5" Foreground="#686F7C" FontFamily="Consolas" HorizontalAlignment="Left"/>
+                    <TextBlock x:Name="ResetO5H" Text="--" FontSize="8.5" FontWeight="SemiBold" Foreground="#8E95A2" FontFamily="Consolas" HorizontalAlignment="Right"/>
+                  </Grid>
+                </StackPanel>
+              </Border>
+
+              <!-- GPT 7D Box -->
+              <Border x:Name="BoxO7D" CornerRadius="6" Background="#181B22" BorderBrush="#222631" BorderThickness="1" Padding="7,5" Margin="3,0,0,0">
+                <StackPanel>
+                  <Grid Margin="0,0,0,3.5">
+                    <TextBlock x:Name="TitleO7D" Text="GPT 7D" FontSize="9" FontWeight="SemiBold" Foreground="#8E95A2" HorizontalAlignment="Left"/>
+                    <TextBlock x:Name="PctO7D" Text="--%" FontSize="9" FontWeight="Bold" Foreground="#10B981" FontFamily="Consolas" HorizontalAlignment="Right"/>
+                  </Grid>
+                  <UniformGrid x:Name="BarO7D" Rows="1" Columns="12" Height="5" Margin="0,0,0,3.5"/>
+                  <Grid>
+                    <TextBlock x:Name="MetaO7D" Text="`$0/`$0" FontSize="8.5" Foreground="#686F7C" FontFamily="Consolas" HorizontalAlignment="Left"/>
+                    <TextBlock x:Name="ResetO7D" Text="--" FontSize="8.5" FontWeight="SemiBold" Foreground="#8E95A2" FontFamily="Consolas" HorizontalAlignment="Right"/>
                   </Grid>
                 </StackPanel>
               </Border>
@@ -603,9 +731,9 @@ $ctrlBall = @{}
 foreach ($name in @(
   'BallOuterGrid', 'BallRoot', 'TaskbarLayoutGrid', 'FloatLayoutGrid',
   'TbStatusDot', 'TbTodayTurns', 'TbTodayCost', 'TbTodayTokens', 'TbDivider',
-  'TbTrackC', 'TbFillC', 'TbTextC', 'TbTrackG', 'TbFillG', 'TbTextG', 'TbTrackTP', 'TbFillTP', 'TbTextTP',
+  'TbTrackC', 'TbFillC', 'TbTextC', 'TbTrackO', 'TbFillO', 'TbTextO', 'TbTrackG', 'TbFillG', 'TbTextG', 'TbTrackTP', 'TbFillTP', 'TbTextTP',
   'StatusDot', 'BallTodayLabel', 'BallTodayCost', 'BallTodayTurns',
-  'BallDivider', 'MiniTrackC', 'MiniFillC', 'MiniTextC',
+  'BallDivider', 'MiniTrackC', 'MiniFillC', 'MiniTextC', 'MiniTrackO', 'MiniFillO', 'MiniTextO',
   'MiniTrackG', 'MiniFillG', 'MiniTextG', 'MiniTrackTP', 'MiniFillTP', 'MiniTextTP'
 )) {
   $ctrlBall[$name] = $ballWin.FindName($name)
@@ -619,9 +747,13 @@ foreach ($name in @(
   'CardToday', 'TodayTitleText', 'HudTodayCost', 'HudTodayMeta', 'HudTodaySaved',
   'PodTodayClaude', 'LblTodayClaude', 'ValTodayClaude',
   'PodTodayAgy', 'LblTodayAgy', 'ValTodayAgy',
+  'PodTodayGpt', 'LblTodayGpt', 'ValTodayGpt',
   'CardClaude', 'ClaudeHeaderTitle', 'ClaudeRoiBadge', 'ClaudeRoiText',
   'BoxC5H', 'TitleC5H', 'PctC5H', 'BarC5H', 'MetaC5H', 'ResetC5H',
   'BoxC7D', 'TitleC7D', 'PctC7D', 'BarC7D', 'MetaC7D', 'ResetC7D',
+  'CardGpt', 'GptHeaderTitle', 'GptRoiBadge', 'GptRoiText',
+  'BoxO5H', 'TitleO5H', 'PctO5H', 'BarO5H', 'MetaO5H', 'ResetO5H',
+  'BoxO7D', 'TitleO7D', 'PctO7D', 'BarO7D', 'MetaO7D', 'ResetO7D',
   'CardAgy', 'AgyHeaderTitle', 'AgyRoiBadge', 'AgyRoiText',
   'BoxG5H', 'TitleG5H', 'PctG5H', 'BarG5H', 'MetaG5H', 'ResetG5H',
   'BoxG7D', 'TitleG7D', 'PctG7D', 'BarG7D', 'MetaG7D', 'ResetG7D',
@@ -642,10 +774,14 @@ $ctrlHud.BtnOpenWeb.Content = $UI.btnWeb
 $ctrlHud.TodayTitleText.Text = $UI.todayTitle
 $ctrlHud.LblTodayClaude.Text = $UI.todayClaude
 $ctrlHud.LblTodayAgy.Text = $UI.todayAgy
+$ctrlHud.LblTodayGpt.Text = $UI.todayGpt
 $ctrlHud.ClaudeHeaderTitle.Text = $UI.claudeTitle
+$ctrlHud.GptHeaderTitle.Text = $UI.gptTitle
 $ctrlHud.AgyHeaderTitle.Text = $UI.agyTitle
 $ctrlHud.TitleC5H.Text = $UI.c5h
 $ctrlHud.TitleC7D.Text = $UI.c7d
+$ctrlHud.TitleO5H.Text = $UI.o5h
+$ctrlHud.TitleO7D.Text = $UI.o7d
 $ctrlHud.TitleG5H.Text = $UI.g5h
 $ctrlHud.TitleG7D.Text = $UI.g7d
 $ctrlHud.TitleTP5H.Text = $UI.tp5h
@@ -657,13 +793,15 @@ $ctrlHud.BtnExitApp.Content = $UI.btnExit
 $voxelBars = @{
   C5H  = @()
   C7D  = @()
+  O5H  = @()
+  O7D  = @()
   G5H  = @()
   G7D  = @()
   TP5H = @()
   TP7D = @()
 }
 
-foreach ($key in @('C5H', 'C7D', 'G5H', 'G7D', 'TP5H', 'TP7D')) {
+foreach ($key in @('C5H', 'C7D', 'O5H', 'O7D', 'G5H', 'G7D', 'TP5H', 'TP7D')) {
   $grid = $ctrlHud["Bar$key"]
   $grid.Children.Clear()
   $cells = @()
@@ -719,10 +857,10 @@ function Apply-Theme {
     $ctrlBall.TbDivider.Background = New-Brush "#E2E8F0"
     $ctrlBall.BallTodayCost.Foreground = New-Brush "#111318"
     $ctrlBall.TbTodayCost.Foreground = New-Brush "#111318"
-    foreach ($k in @('MiniTextC', 'MiniTextG', 'MiniTextTP', 'TbTextC', 'TbTextG', 'TbTextTP')) {
+    foreach ($k in @('MiniTextC', 'MiniTextO', 'MiniTextG', 'MiniTextTP', 'TbTextC', 'TbTextO', 'TbTextG', 'TbTextTP')) {
       $ctrlBall[$k].Foreground = New-Brush "#111318"
     }
-    foreach ($k in @('MiniTrackC', 'MiniTrackG', 'MiniTrackTP', 'TbTrackC', 'TbTrackG', 'TbTrackTP')) {
+    foreach ($k in @('MiniTrackC', 'MiniTrackO', 'MiniTrackG', 'MiniTrackTP', 'TbTrackC', 'TbTrackO', 'TbTrackG', 'TbTrackTP')) {
       $ctrlBall[$k].Background = New-Brush "#E2E8F0"
     }
 
@@ -738,19 +876,25 @@ function Apply-Theme {
     $ctrlHud.PodTodayAgy.Background = New-Brush "#F3F4F6"
     $ctrlHud.PodTodayAgy.BorderBrush = New-Brush "#E2E8F0"
     $ctrlHud.ValTodayAgy.Foreground = New-Brush "#111318"
+    $ctrlHud.PodTodayGpt.Background = New-Brush "#F3F4F6"
+    $ctrlHud.PodTodayGpt.BorderBrush = New-Brush "#E2E8F0"
+    $ctrlHud.ValTodayGpt.Foreground = New-Brush "#111318"
 
     $ctrlHud.CardClaude.Background = New-Brush "#FFFFFF"
     $ctrlHud.CardClaude.BorderBrush = New-Brush "#DCE3EE"
     $ctrlHud.ClaudeHeaderTitle.Foreground = New-Brush "#111318"
+    $ctrlHud.CardGpt.Background = New-Brush "#FFFFFF"
+    $ctrlHud.CardGpt.BorderBrush = New-Brush "#DCE3EE"
+    $ctrlHud.GptHeaderTitle.Foreground = New-Brush "#111318"
     $ctrlHud.CardAgy.Background = New-Brush "#FFFFFF"
     $ctrlHud.CardAgy.BorderBrush = New-Brush "#DCE3EE"
     $ctrlHud.AgyHeaderTitle.Foreground = New-Brush "#111318"
 
-    foreach ($b in @('BoxC5H', 'BoxC7D', 'BoxG5H', 'BoxG7D', 'BoxTP5H', 'BoxTP7D')) {
+    foreach ($b in @('BoxC5H', 'BoxC7D', 'BoxO5H', 'BoxO7D', 'BoxG5H', 'BoxG7D', 'BoxTP5H', 'BoxTP7D')) {
       $ctrlHud[$b].Background = New-Brush "#F3F4F6"
       $ctrlHud[$b].BorderBrush = New-Brush "#E2E8F0"
     }
-    foreach ($t in @('TitleC5H', 'TitleC7D', 'TitleG5H', 'TitleG7D', 'TitleTP5H', 'TitleTP7D', 'ResetC5H', 'ResetC7D', 'ResetG5H', 'ResetG7D', 'ResetTP5H', 'ResetTP7D')) {
+    foreach ($t in @('TitleC5H', 'TitleC7D', 'TitleO5H', 'TitleO7D', 'TitleG5H', 'TitleG7D', 'TitleTP5H', 'TitleTP7D', 'ResetC5H', 'ResetC7D', 'ResetO5H', 'ResetO7D', 'ResetG5H', 'ResetG7D', 'ResetTP5H', 'ResetTP7D')) {
       $ctrlHud[$t].Foreground = New-Brush "#525866"
     }
   } else {
@@ -760,10 +904,10 @@ function Apply-Theme {
     $ctrlBall.TbDivider.Background = New-Brush "#222631"
     $ctrlBall.BallTodayCost.Foreground = New-Brush "#F1F3F5"
     $ctrlBall.TbTodayCost.Foreground = New-Brush "#F1F3F5"
-    foreach ($k in @('MiniTextC', 'MiniTextG', 'MiniTextTP', 'TbTextC', 'TbTextG', 'TbTextTP')) {
+    foreach ($k in @('MiniTextC', 'MiniTextO', 'MiniTextG', 'MiniTextTP', 'TbTextC', 'TbTextO', 'TbTextG', 'TbTextTP')) {
       $ctrlBall[$k].Foreground = New-Brush "#F1F3F5"
     }
-    foreach ($k in @('MiniTrackC', 'MiniTrackG', 'MiniTrackTP', 'TbTrackC', 'TbTrackG', 'TbTrackTP')) {
+    foreach ($k in @('MiniTrackC', 'MiniTrackO', 'MiniTrackG', 'MiniTrackTP', 'TbTrackC', 'TbTrackO', 'TbTrackG', 'TbTrackTP')) {
       $ctrlBall[$k].Background = New-Brush "#1D212B"
     }
 
@@ -779,19 +923,25 @@ function Apply-Theme {
     $ctrlHud.PodTodayAgy.Background = New-Brush "#181B22"
     $ctrlHud.PodTodayAgy.BorderBrush = New-Brush "#222631"
     $ctrlHud.ValTodayAgy.Foreground = New-Brush "#F1F3F5"
+    $ctrlHud.PodTodayGpt.Background = New-Brush "#181B22"
+    $ctrlHud.PodTodayGpt.BorderBrush = New-Brush "#222631"
+    $ctrlHud.ValTodayGpt.Foreground = New-Brush "#F1F3F5"
 
     $ctrlHud.CardClaude.Background = New-Brush "#12141A"
     $ctrlHud.CardClaude.BorderBrush = New-Brush "#222631"
     $ctrlHud.ClaudeHeaderTitle.Foreground = New-Brush "#F1F3F5"
+    $ctrlHud.CardGpt.Background = New-Brush "#12141A"
+    $ctrlHud.CardGpt.BorderBrush = New-Brush "#222631"
+    $ctrlHud.GptHeaderTitle.Foreground = New-Brush "#F1F3F5"
     $ctrlHud.CardAgy.Background = New-Brush "#12141A"
     $ctrlHud.CardAgy.BorderBrush = New-Brush "#222631"
     $ctrlHud.AgyHeaderTitle.Foreground = New-Brush "#F1F3F5"
 
-    foreach ($b in @('BoxC5H', 'BoxC7D', 'BoxG5H', 'BoxG7D', 'BoxTP5H', 'BoxTP7D')) {
+    foreach ($b in @('BoxC5H', 'BoxC7D', 'BoxO5H', 'BoxO7D', 'BoxG5H', 'BoxG7D', 'BoxTP5H', 'BoxTP7D')) {
       $ctrlHud[$b].Background = New-Brush "#181B22"
       $ctrlHud[$b].BorderBrush = New-Brush "#222631"
     }
-    foreach ($t in @('TitleC5H', 'TitleC7D', 'TitleG5H', 'TitleG7D', 'TitleTP5H', 'TitleTP7D', 'ResetC5H', 'ResetC7D', 'ResetG5H', 'ResetG7D', 'ResetTP5H', 'ResetTP7D')) {
+    foreach ($t in @('TitleC5H', 'TitleC7D', 'TitleO5H', 'TitleO7D', 'TitleG5H', 'TitleG7D', 'TitleTP5H', 'TitleTP7D', 'ResetC5H', 'ResetC7D', 'ResetO5H', 'ResetO7D', 'ResetG5H', 'ResetG7D', 'ResetTP5H', 'ResetTP7D')) {
       $ctrlHud[$t].Foreground = New-Brush "#8E95A2"
     }
   }
@@ -810,7 +960,7 @@ function Apply-DockMode {
   $wa = [System.Windows.SystemParameters]::WorkArea
   $screenW = [System.Windows.SystemParameters]::PrimaryScreenWidth
   if ($state.dockMode -eq 'taskbar') {
-    $ballWin.Width = 406
+    $ballWin.Width = 440
     $ballWin.Height = 44
     $ctrlBall.BallOuterGrid.Margin = New-Object System.Windows.Thickness(3, 2, 3, 2)
     $ctrlBall.BallRoot.CornerRadius = New-Object System.Windows.CornerRadius(8)
@@ -824,8 +974,8 @@ function Apply-DockMode {
     $ballWin.Left = [Math]::Max(4, [Math]::Min($state.taskbarLeft, $screenW - $ballWin.Width - 4))
     $ballWin.Top = Get-TaskbarTop
   } else {
-    $ballWin.Width = 214
-    $ballWin.Height = 68
+    $ballWin.Width = 220
+    $ballWin.Height = 78
     $ctrlBall.BallOuterGrid.Margin = New-Object System.Windows.Thickness(5)
     $ctrlBall.BallRoot.CornerRadius = New-Object System.Windows.CornerRadius(10)
     $ctrlBall.BallRoot.BorderThickness = New-Object System.Windows.Thickness(1)
@@ -1021,11 +1171,14 @@ function Render-Snapshot($snap) {
 
     $cCost = [double]$ts.claude.costUsd
     $cTurns = [int]$ts.claude.turns
-    $ctrlHud.ValTodayClaude.Text = ("`${0:N2} ({1}$($UI.turnsUnit))" -f $cCost, $cTurns)
+    $ctrlHud.ValTodayClaude.Text = ("`${0:N1}" -f $cCost)
 
     $aCost = [double]$ts.antigravity.costUsd
     $aTurns = [int]$ts.antigravity.turns
-    $ctrlHud.ValTodayAgy.Text = ("`${0:N2} ({1}$($UI.turnsUnit))" -f $aCost, $aTurns)
+    $ctrlHud.ValTodayAgy.Text = ("`${0:N1}" -f $aCost)
+
+    $oCost = if ($null -ne $ts.gpt) { [double]$ts.gpt.costUsd } else { 0.0 }
+    $ctrlHud.ValTodayGpt.Text = ("`${0:N1}" -f $oCost)
   }
 
   # 2. Claude Quota
@@ -1043,6 +1196,23 @@ function Render-Snapshot($snap) {
     Set-QuotaMeter 'C5H' $c5Used $c5Rem ([double]$qc.fiveHour.costUsd) ([double]$qc.fiveHourBudgetUsd) ([int]$qc.fiveHour.turns) ([string]$qc.fiveHour.resetsAt) "#D97757"
     Set-QuotaMeter 'C7D' $c7Used $c7Rem ([double]$qc.sevenDay.costUsd) ([double]$qc.sevenDayBudgetUsd) ([int]$qc.sevenDay.turns) ([string]$qc.sevenDay.resetsAt) "#D97757"
     Set-MiniBallBar 'C' $c5Used $c5Rem "#D97757"
+  }
+
+  # 2.5 OpenAI Codex / GPT Quota
+  $qo = $snap.quotaStatus.gpt
+  $o5Used = 0.0
+  if ($null -ne $qo) {
+    $o5Used = [double]$qo.fiveHour.usedPercentage
+    $o5Rem = [double]$qo.fiveHour.remainingPercentage
+    $o7Used = [double]$qo.sevenDay.usedPercentage
+    $o7Rem = [double]$qo.sevenDay.remainingPercentage
+
+    $oPlanShort = ($qo.planName -split ' ')[0..1] -join ' '
+    $ctrlHud.GptRoiText.Text = "$oPlanShort | $($UI.roiPrefix)$([int]$qo.thirtyDay.roiPercentage)%"
+
+    Set-QuotaMeter 'O5H' $o5Used $o5Rem ([double]$qo.fiveHour.costUsd) ([double]$qo.fiveHourBudgetUsd) ([int]$qo.fiveHour.turns) ([string]$qo.fiveHour.resetsAt) "#10B981"
+    Set-QuotaMeter 'O7D' $o7Used $o7Rem ([double]$qo.sevenDay.costUsd) ([double]$qo.sevenDayBudgetUsd) ([int]$qo.sevenDay.turns) ([string]$qo.sevenDay.resetsAt) "#10B981"
+    Set-MiniBallBar 'O' $o5Used $o5Rem "#10B981"
   }
 
   # 3. Antigravity Quota (Gemini + 3P)
@@ -1075,7 +1245,7 @@ function Render-Snapshot($snap) {
   }
 
   # Status Dot color by max 5h usage
-  $maxUsed = [Math]::Max($c5Used, [Math]::Max($g5Used, $tp5Used))
+  $maxUsed = [Math]::Max([Math]::Max($c5Used, $o5Used), [Math]::Max($g5Used, $tp5Used))
   $dotBrush = if ($maxUsed -ge 85.0) {
     New-Brush "#D95C5C"
   } elseif ($maxUsed -ge 65.0) {
@@ -1102,7 +1272,7 @@ function Start-BackendServerIfNeeded {
   $script:serverStartAttempted = $true
   if (Test-Path $serverScript) {
     try {
-      Start-Process -FilePath "node" -ArgumentList "`"$serverScript`"" -WorkingDirectory $rootDir -WindowStyle Hidden | Out-Null
+      Start-Process -FilePath $script:nodeExe -ArgumentList "`"$serverScript`"" -WorkingDirectory $rootDir -WindowStyle Hidden | Out-Null
     } catch {}
   }
 }
@@ -1515,3 +1685,16 @@ Request-SnapshotNow
 $timer.Start()
 
 [System.Windows.Threading.Dispatcher]::Run()
+
+} catch {
+  $errMsg = $_.Exception.ToString()
+  $logPath = Join-Path $rootDir "data\floating-ball-error.log"
+  try {
+    if (-not (Test-Path (Join-Path $rootDir "data"))) {
+      New-Item -ItemType Directory -Path (Join-Path $rootDir "data") -Force | Out-Null
+    }
+    Set-Content -Path $logPath -Value "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] $errMsg" -Encoding UTF8
+  } catch {}
+  [System.Windows.Forms.MessageBox]::Show("悬浮球启动异常：`n`n$errMsg`n`n错误日志已写入: $logPath", "AI Usage Dashboard 错误", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Error)
+  exit 1
+}

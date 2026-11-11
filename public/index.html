@@ -53,6 +53,11 @@
       --agy-side: light-dark(#1d4ed8, #4278d4);
       --agy-soft: light-dark(rgba(37, 99, 235, 0.08), rgba(94, 151, 246, 0.12));
 
+      --gpt-color: light-dark(#059669, #10b981);
+      --gpt-top: light-dark(#059669, #10b981);
+      --gpt-side: light-dark(#047857, #059669);
+      --gpt-soft: light-dark(rgba(5, 150, 105, 0.09), rgba(16, 185, 129, 0.12));
+
       --tp-color: light-dark(#5c6bc0, #8b95c9);
       --tp-top: light-dark(#5c6bc0, #8b95c9);
       --tp-side: light-dark(#4956a6, #6e78ad);
@@ -282,6 +287,7 @@
     .dot-today { background-color: var(--ok-color); }
     .dot-claude { background-color: var(--claude-color); }
     .dot-agy { background-color: var(--agy-color); }
+    .dot-gpt { background-color: var(--gpt-color); }
     .dot-tp { background-color: var(--tp-color); }
     .dot-neutral { background-color: var(--text-muted); }
 
@@ -297,17 +303,17 @@
       gap: 0.55rem;
     }
 
-    /* Layer 1: 6 Architectural KPI Cards */
+    /* Layer 1: 7 Architectural KPI Cards (Today Total + 3 Vendors + 3 Period Metrics) */
     .kpi-strip {
       flex-shrink: 0;
       display: grid;
-      grid-template-columns: repeat(6, minmax(0, 1fr));
-      gap: 0.55rem;
+      grid-template-columns: repeat(7, minmax(0, 1fr));
+      gap: 0.45rem;
     }
 
-    @media (max-width: 1179px) {
+    @media (max-width: 1320px) {
       .kpi-strip {
-        grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+        grid-template-columns: repeat(auto-fit, minmax(185px, 1fr));
       }
     }
 
@@ -316,11 +322,11 @@
       border: 1px solid var(--voxel-border);
       border-radius: var(--r-card);
       box-shadow: 0 1px 3px var(--voxel-edge);
-      padding: 0.6rem 0.8rem;
+      padding: 0.46rem 0.68rem;
       display: flex;
       flex-direction: column;
       justify-content: space-between;
-      gap: 0.22rem;
+      gap: 0.16rem;
       min-inline-size: 0;
       cursor: default;
       transition: border-color 0.16s ease;
@@ -380,7 +386,7 @@
 
     .kpi-value {
       font-family: var(--font-mono);
-      font-size: 1.32rem;
+      font-size: 1.2rem;
       font-weight: 700;
       color: var(--text-primary);
       font-variant-numeric: tabular-nums;
@@ -424,13 +430,13 @@
       }
     }
 
-    /* Left Quota Column: 3 Stacked Cards (Claude, Gemini, ThirdParty) */
+    /* Left Quota Column: 3 Vendor Cards (Claude, GPT/Codex, Antigravity) + Activity Heatmap */
     .quota-column {
-      flex: 5;
-      min-inline-size: 340px;
+      flex: 5.2;
+      min-inline-size: 350px;
       display: flex;
       flex-direction: column;
-      gap: 0.55rem;
+      gap: 0.42rem;
       min-block-size: 0;
       overflow-y: auto;
       scrollbar-width: thin;
@@ -438,11 +444,11 @@
     }
 
     .quota-card {
-      padding: 0.56rem 0.82rem;
+      padding: 0.44rem 0.72rem;
       display: flex;
       flex-direction: column;
       justify-content: flex-start;
-      gap: 0.4rem;
+      gap: 0.28rem;
       min-inline-size: 0;
       position: relative;
       overflow: hidden;
@@ -452,13 +458,11 @@
     .quota-bars-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 0.48rem;
+      gap: 0.38rem;
     }
 
-    #card-quota-claude {
-      flex: 0 0 auto;
-    }
-
+    #card-quota-claude,
+    #card-quota-gpt,
     #card-quota-agy {
       flex: 0 0 auto;
     }
@@ -466,25 +470,25 @@
     #card-daily-heatmap {
       flex: 1 1 auto;
       justify-content: space-between;
-      min-block-size: 165px;
+      min-block-size: 148px;
     }
 
     /* Pool Subgroups inside unified Antigravity card */
     .pool-subgroup {
       display: flex;
       flex-direction: column;
-      gap: 0.28rem;
+      gap: 0.2rem;
     }
 
     .pool-subgroup-title {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      font-size: 0.69rem;
-      padding-inline: 0.2rem;
+      font-size: 0.66rem;
+      padding-inline: 0.15rem;
       color: var(--text-secondary);
       border-bottom: 1px solid var(--voxel-border);
-      padding-bottom: 0.2rem;
+      padding-bottom: 0.14rem;
     }
 
     .pool-subgroup-name {
@@ -843,6 +847,7 @@
     }
     .badge-claude { background-color: var(--claude-soft); color: var(--claude-color); }
     .badge-agy { background-color: var(--agy-soft); color: var(--agy-color); }
+    .badge-gpt { background-color: var(--gpt-soft); color: var(--gpt-color); }
     .badge-tp { background-color: var(--tp-soft); color: var(--tp-color); }
     .badge-today { background-color: var(--bg-pod); color: var(--text-secondary); }
 
@@ -881,10 +886,10 @@
       background-color: var(--bg-pod);
       border: 1px solid var(--voxel-border);
       border-radius: var(--r-pod);
-      padding: 0.5rem 0.68rem;
+      padding: 0.36rem 0.56rem;
       display: flex;
       flex-direction: column;
-      gap: 0.34rem;
+      gap: 0.24rem;
       min-inline-size: 0;
       cursor: pointer;
       transition: background-color 0.15s ease, border-color 0.15s ease;
@@ -1240,6 +1245,11 @@
     }
     .voxel-tooltip .tip-ratio-bar .seg-agy {
       background-color: var(--agy-color);
+      block-size: 100%;
+      transition: width 0.15s ease;
+    }
+    .voxel-tooltip .tip-ratio-bar .seg-gpt {
+      background-color: var(--gpt-color);
       block-size: 100%;
       transition: width 0.15s ease;
     }
@@ -1767,6 +1777,7 @@
         <button type="button" data-platform="all" class="active">全部</button>
         <button type="button" data-platform="claude">Claude</button>
         <button type="button" data-platform="antigravity">AGY</button>
+        <button type="button" data-platform="gpt">GPT</button>
       </div>
 
       <!-- Timezone Switcher (东八区 UTC+8 vs 美东 ET) -->
@@ -1832,6 +1843,18 @@
           <div class="kpi-value-sub" id="today-agy-turns">0 轮</div>
         </div>
         <div class="kpi-sub" id="today-agy-sub">Gem 0轮 · 3P 0轮</div>
+      </div>
+
+      <div class="kpi-card is-today" data-tip-key="kpi-today-gpt">
+        <div class="kpi-top">
+          <span class="kpi-top-label"><span class="dot dot-gpt"></span>今日 OpenAI / GPT</span>
+          <span class="kpi-tag tag-today" id="today-gpt-sessions">0 会话</span>
+        </div>
+        <div class="kpi-value-row">
+          <div class="kpi-value" id="today-gpt-cost">$0.00</div>
+          <div class="kpi-value-sub" id="today-gpt-turns">0 轮</div>
+        </div>
+        <div class="kpi-sub" id="today-gpt-sub">0 Tok · 省 $0.00</div>
       </div>
 
       <div class="kpi-card" data-tip-key="kpi-tokens">
@@ -1921,6 +1944,58 @@
                 <div class="meter-meta">
                   <span id="claude-7d-detail">0轮 · 0 Tok · $0/$0</span>
                   <span class="meter-reset-tag" id="claude-30d-summary">无消耗</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <!-- 1.5 OpenAI Codex / GPT -->
+        <article class="voxel-panel quota-card" id="card-quota-gpt">
+          <div class="quota-card-header">
+            <div class="platform-title">
+              <span class="panel-drag-handle">⠿</span>
+              <span class="dot dot-gpt"></span>
+              <span>OpenAI Codex / GPT</span>
+              <span class="badge badge-gpt" id="gpt-plan-badge">Plus $20</span>
+              <span class="pixel-tag live-tag">LIVE</span>
+            </div>
+            <div class="quota-header-right">
+              <span class="roi-pill" id="gpt-30d-inline">30d: $0.00 (0轮)</span>
+              <span class="roi-pill" id="gpt-roi-badge" style="color: var(--ok-color);">ROI --%</span>
+            </div>
+          </div>
+
+          <div class="pool-subgroup">
+            <div class="pool-subgroup-title">
+              <span class="pool-subgroup-name">官方周期配额 (5H &amp; 7D)</span>
+              <span class="pool-subgroup-models">GPT-6.1-Sol · Astra · Luna</span>
+            </div>
+            <div class="quota-bars-grid">
+              <div class="meter-box" id="box-gpt-5h" data-quota-pool="gpt-5h">
+                <div class="meter-top">
+                  <span class="meter-title">5H 窗口</span>
+                  <span class="meter-pct" id="gpt-5h-pct">已用 0% · 剩 100%</span>
+                </div>
+                <div class="voxel-bar-track" id="gpt-5h-bar"></div>
+                <div class="meter-meta">
+                  <span id="gpt-5h-detail">0轮 · 0 Tok · $0/$0</span>
+                  <span class="meter-reset-tag" id="gpt-5h-reset">无消耗</span>
+                </div>
+              </div>
+
+              <div class="meter-box" id="box-gpt-7d" data-quota-pool="gpt-7d">
+                <div class="meter-top">
+                  <span class="meter-title">
+                    7D 周度
+                    <button type="button" class="btn-weekly-breakdown" data-open-weekly="gpt" title="查看 OpenAI / GPT 本周每日消耗周额度、占比及 5 小时窗口统计">📊 每日明细</button>
+                  </span>
+                  <span class="meter-pct" id="gpt-7d-pct">已用 0% · 剩 100%</span>
+                </div>
+                <div class="voxel-bar-track" id="gpt-7d-bar"></div>
+                <div class="meter-meta">
+                  <span id="gpt-7d-detail">0轮 · 0 Tok · $0/$0</span>
+                  <span class="meter-reset-tag" id="gpt-30d-summary">无消耗</span>
                 </div>
               </div>
             </div>
@@ -2075,7 +2150,7 @@
           <div class="section-header">
             <div style="display: flex; align-items: center; gap: 0.4rem;">
               <span class="panel-drag-handle">⠿</span>
-              <h2 class="section-title">每日消耗趋势 (Claude vs AGY)</h2>
+              <h2 class="section-title">每日消耗趋势 (Claude vs AGY vs GPT)</h2>
             </div>
             <div style="display: flex; align-items: center; gap: 0.45rem;">
               <span class="chart-meta-pill" id="daily-chart-summary">--</span>
@@ -2102,7 +2177,7 @@
             </div>
             <div style="display: flex; align-items: center; gap: 0.45rem;">
               <span class="chart-meta-pill" id="hourly-chart-summary">--</span>
-              <span class="chart-meta-pill"><span class="dot dot-claude"></span>Claude <span class="dot dot-agy" style="margin-left:4px;"></span>AGY</span>
+              <span class="chart-meta-pill"><span class="dot dot-claude"></span>Claude <span class="dot dot-agy" style="margin-left:4px;"></span>AGY <span class="dot dot-gpt" style="margin-left:4px;"></span>GPT</span>
             </div>
           </div>
           <div class="chart-stage" id="hourly-chart-container"></div>
@@ -2263,6 +2338,15 @@
         </select>
       </div>
 
+      <div class="form-row">
+        <label for="select-gpt-plan">OpenAI / ChatGPT 订阅套餐档位</label>
+        <select id="select-gpt-plan" class="select-input">
+          <option value="plus">ChatGPT Plus ($20/月)</option>
+          <option value="team">ChatGPT Team ($30/月)</option>
+          <option value="pro">ChatGPT Pro ($200/月)</option>
+        </select>
+      </div>
+
       <div style="border-block-start: 2px solid var(--voxel-border); padding-block-start: 0.65rem;">
         <div style="font-weight: 700; font-size: 0.8rem; margin-block-end: 0.25rem;">
           🔌 Claude Code StatusLine 实时配额钩子 (可选增强)
@@ -2287,6 +2371,7 @@
       <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem;">
         <div class="segmented" id="weekly-pool-switcher" role="group" aria-label="配额池切换">
           <button type="button" data-weekly-pool="claude" class="active">🟧 Claude 周额度</button>
+          <button type="button" data-weekly-pool="gpt">🟩 GPT 周额度</button>
           <button type="button" data-weekly-pool="agy-gemini">🟦 AGY Gemini 周额度</button>
           <button type="button" data-weekly-pool="agy-tp">🟪 AGY 第三方周额度</button>
         </div>
@@ -2520,6 +2605,7 @@
             <div class="tip-header"><span>🌞 今日实时消耗总览</span><span>${todayStats.date}</span></div>
             <div class="tip-row"><span class="tip-label">🟧 Claude 消耗</span><span class="tip-val">${fmtUsd(todayStats.claude.costUsd)} (${todayStats.claude.turns}轮)</span></div>
             <div class="tip-row"><span class="tip-label">🟦 Antigravity 消耗</span><span class="tip-val">${fmtUsd(todayStats.antigravity.costUsd)} (${todayStats.antigravity.turns}轮)</span></div>
+            <div class="tip-row"><span class="tip-label">🟩 OpenAI / GPT 消耗</span><span class="tip-val">${fmtUsd(todayStats.gpt?.costUsd || 0)} (${todayStats.gpt?.turns || 0}轮)</span></div>
             <div class="tip-row tip-total"><span class="tip-label">💰 今日等价总值</span><span class="tip-val" style="color:var(--today-color);">${fmtUsd(todayStats.combined.costUsd)}</span></div>
             <div class="tip-row"><span class="tip-label">⚡ 今日总吞吐</span><span class="tip-val">${fmtTokens(todayStats.combined.totalTokens)} Tok</span></div>
             <div class="tip-row"><span class="tip-label">🚀 平均输出速率</span><span class="tip-val">${fmtTps(todayStats.combined.avgTps)} (峰值 ${fmtTps(todayStats.combined.peakTps)})</span></div>
@@ -2548,6 +2634,18 @@
             <div class="tip-row"><span class="tip-label">今日总吞吐</span><span class="tip-val">${fmtTokens(ta.totalTokens)} Tok</span></div>
             <div class="tip-row"><span class="tip-label">平均输出速率</span><span class="tip-val" style="color:var(--agy-color);">${fmtTps(ta.avgTps)} (峰值 ${fmtTps(ta.peakTps)})</span></div>
           `;
+        } else if (key === 'kpi-today-gpt' && todayStats?.gpt) {
+          const tg = todayStats.gpt;
+          html = `
+            <div class="tip-header"><span>🟩 今日 OpenAI / GPT 战报</span><span>${tg.sessions} 个会话</span></div>
+            <div class="tip-row"><span class="tip-label">交互轮次</span><span class="tip-val">${tg.turns} 轮</span></div>
+            <div class="tip-row"><span class="tip-label">输入 Token</span><span class="tip-val">${fmtTokens(tg.inputTokens)}</span></div>
+            <div class="tip-row"><span class="tip-label">缓存读取</span><span class="tip-val">${fmtTokens(tg.cacheReadTokens)}</span></div>
+            <div class="tip-row"><span class="tip-label">输出 Token</span><span class="tip-val">${fmtTokens(tg.outputTokens)}</span></div>
+            <div class="tip-row"><span class="tip-label">平均输出速率</span><span class="tip-val" style="color:var(--gpt-color);">${fmtTps(tg.avgTps)} (峰值 ${fmtTps(tg.peakTps)})</span></div>
+            <div class="tip-row tip-total"><span class="tip-label">今日等价费用</span><span class="tip-val">${fmtUsd(tg.costUsd)}</span></div>
+            <div class="tip-row"><span class="tip-label">缓存节约价值</span><span class="tip-val" style="color:var(--ok-color);">${fmtUsd(tg.cacheSavingsUsd)}</span></div>
+          `;
         } else if (key === 'kpi-tokens') {
           const t = totals.combined;
           html = `
@@ -2563,18 +2661,21 @@
         } else if (key === 'kpi-cost') {
           html = `
             <div class="tip-header"><span>💰 等价 API 价值分配</span></div>
-            <div class="tip-row"><span class="tip-label">Claude 系列</span><span class="tip-val">${fmtUsd(totals.claude.costUsd)}</span></div>
-            <div class="tip-row"><span class="tip-label">Antigravity 系列</span><span class="tip-val">${fmtUsd(totals.antigravity.costUsd)}</span></div>
+            <div class="tip-row"><span class="tip-label">🟧 Claude 系列</span><span class="tip-val">${fmtUsd(totals.claude.costUsd)}</span></div>
+            <div class="tip-row"><span class="tip-label">🟦 Antigravity 系列</span><span class="tip-val">${fmtUsd(totals.antigravity.costUsd)}</span></div>
+            <div class="tip-row"><span class="tip-label">🟩 OpenAI / GPT 系列</span><span class="tip-val">${fmtUsd(totals.gpt?.costUsd || 0)}</span></div>
             <div class="tip-row tip-total"><span class="tip-label">等价 API 总值</span><span class="tip-val">${fmtUsd(totals.combined.costUsd)}</span></div>
             <div class="tip-row"><span class="tip-label">Prompt 缓存节约</span><span class="tip-val" style="color:var(--ok-color);">${fmtUsd(totals.combined.cacheSavingsUsd)}</span></div>
           `;
         } else if (key === 'kpi-sessions') {
           html = `
             <div class="tip-header"><span>⚡ 会话与交互统计</span></div>
-            <div class="tip-row"><span class="tip-label">Claude 会话 / 轮次</span><span class="tip-val">${totals.claude.sessions} 会话 / ${totals.claude.turns} 轮</span></div>
-            <div class="tip-row"><span class="tip-label">Claude 输出速率</span><span class="tip-val" style="color:var(--claude-color);">${fmtTps(totals.claude.avgTps)} (峰值 ${fmtTps(totals.claude.peakTps)})</span></div>
-            <div class="tip-row"><span class="tip-label">Antigravity 会话 / 轮次</span><span class="tip-val">${totals.antigravity.sessions} 会话 / ${totals.antigravity.turns} 轮</span></div>
-            <div class="tip-row"><span class="tip-label">Antigravity 输出速率</span><span class="tip-val" style="color:var(--agy-color);">${fmtTps(totals.antigravity.avgTps)} (峰值 ${fmtTps(totals.antigravity.peakTps)})</span></div>
+            <div class="tip-row"><span class="tip-label">🟧 Claude 会话 / 轮次</span><span class="tip-val">${totals.claude.sessions} 会话 / ${totals.claude.turns} 轮</span></div>
+            <div class="tip-row"><span class="tip-label">🟧 Claude 输出速率</span><span class="tip-val" style="color:var(--claude-color);">${fmtTps(totals.claude.avgTps)} (峰值 ${fmtTps(totals.claude.peakTps)})</span></div>
+            <div class="tip-row"><span class="tip-label">🟦 Antigravity 会话 / 轮次</span><span class="tip-val">${totals.antigravity.sessions} 会话 / ${totals.antigravity.turns} 轮</span></div>
+            <div class="tip-row"><span class="tip-label">🟦 Antigravity 输出速率</span><span class="tip-val" style="color:var(--agy-color);">${fmtTps(totals.antigravity.avgTps)} (峰值 ${fmtTps(totals.antigravity.peakTps)})</span></div>
+            <div class="tip-row"><span class="tip-label">🟩 OpenAI / GPT 会话 / 轮次</span><span class="tip-val">${totals.gpt?.sessions || 0} 会话 / ${totals.gpt?.turns || 0} 轮</span></div>
+            <div class="tip-row"><span class="tip-label">🟩 OpenAI / GPT 输出速率</span><span class="tip-val" style="color:var(--gpt-color);">${fmtTps(totals.gpt?.avgTps)} (峰值 ${fmtTps(totals.gpt?.peakTps)})</span></div>
             <div class="tip-row tip-total"><span class="tip-label">全平台合计</span><span class="tip-val">${totals.combined.sessions} 会话 / ${totals.combined.turns} 轮</span></div>
           `;
         }
@@ -2605,7 +2706,7 @@
             <div class="tip-row"><span class="tip-label">窗口重置倒计时</span><span class="tip-val">${fmtResetCountdown(q.fiveHour.resetsAt)}</span></div>
             <div class="tip-row"><span class="tip-label">窗口消耗金额</span><span class="tip-val">${fmtUsd(q.fiveHour.costUsd)} / ~$${q.fiveHourBudgetUsd}</span></div>
             <div class="tip-row"><span class="tip-label">窗口交互统计</span><span class="tip-val">${q.fiveHour.turns} 轮 · ${fmtTokens(q.fiveHour.totalTokens)} Tok</span></div>
-            <div class="tip-row tip-total"><span class="tip-label">数据源直连</span><span class="tip-val" style="color:var(--ok-color);">✓ ${q.isOfficialLiveQuota ? 'Claude Desktop 官方直连' : '周期已对齐'}</span></div>
+            <div class="tip-row tip-total"><span class="tip-label">数据源直连</span><span class="tip-val" style="color:var(--ok-color);">✓ ${q.isOfficialLiveQuota ? (q.quotaSourceLabel?.includes('OAuth') ? 'Claude 官方 OAuth 实时直连' : 'Claude Desktop 官方直连') : '周期已对齐'}</span></div>
           `;
         } else if (pool === 'claude-7d') {
           const q = quotaStatus.claude;
@@ -2621,7 +2722,7 @@
             <div class="tip-row"><span class="tip-label">周限额重置倒计时</span><span class="tip-val">${fmtResetCountdown(q.sevenDay.resetsAt)}</span></div>
             <div class="tip-row"><span class="tip-label">周累计消耗金额</span><span class="tip-val">${fmtUsd(q.sevenDay.costUsd)} / ~$${q.sevenDayBudgetUsd}</span></div>
             <div class="tip-row"><span class="tip-label">周累计交互量</span><span class="tip-val">${q.sevenDay.turns} 轮 · ${fmtTokens(q.sevenDay.totalTokens)} Tok</span></div>
-            <div class="tip-row tip-total"><span class="tip-label">数据源直连</span><span class="tip-val" style="color:var(--ok-color);">✓ ${q.isOfficialLiveQuota ? 'Claude Desktop 官方直连' : '周期已对齐'}</span></div>
+            <div class="tip-row tip-total"><span class="tip-label">数据源直连</span><span class="tip-val" style="color:var(--ok-color);">✓ ${q.isOfficialLiveQuota ? (q.quotaSourceLabel?.includes('OAuth') ? 'Claude 官方 OAuth 实时直连' : 'Claude Desktop 官方直连') : '周期已对齐'}</span></div>
           `;
         } else if (pool === 'agy-gemini-5h') {
           const q = quotaStatus.antigravity;
@@ -2687,6 +2788,38 @@
             <div class="tip-row"><span class="tip-label">周累计交互量</span><span class="tip-val">${tp.sevenDay.turns} 轮 · ${fmtTokens(tp.sevenDay.totalTokens)} Tok</span></div>
             <div class="tip-row tip-total"><span class="tip-label">数据源直连</span><span class="tip-val" style="color:var(--ok-color);">✓ Antigravity 独立配额池直连</span></div>
           `;
+        } else if (pool === 'gpt-5h' && quotaStatus.gpt) {
+          const q = quotaStatus.gpt;
+          const uPct = q.fiveHour.usedPercentage;
+          const color = uPct >= 85 ? 'var(--danger-color)' : uPct >= 65 ? 'var(--warn-color)' : 'var(--gpt-color)';
+          html = `
+            <div class="tip-header">
+              <span>🟩 OpenAI / GPT 5小时滚动配额</span>
+              <span class="tip-badge badge-gpt">${q.planName}</span>
+            </div>
+            <div class="tip-row"><span class="tip-label">当前已用比例</span><span class="tip-val" style="color:${color};">${uPct}% (剩余 ${q.fiveHour.remainingPercentage}%)</span></div>
+            <div class="tip-ratio-bar"><div style="background-color:${color}; width:${Math.min(100, uPct)}%; height:100%;"></div></div>
+            <div class="tip-row"><span class="tip-label">窗口重置倒计时</span><span class="tip-val">${fmtResetCountdown(q.fiveHour.resetsAt)}</span></div>
+            <div class="tip-row"><span class="tip-label">窗口消耗金额</span><span class="tip-val">${fmtUsd(q.fiveHour.costUsd)} / ~$${q.fiveHourBudgetUsd}</span></div>
+            <div class="tip-row"><span class="tip-label">窗口交互统计</span><span class="tip-val">${q.fiveHour.turns} 轮 · ${fmtTokens(q.fiveHour.totalTokens)} Tok</span></div>
+            <div class="tip-row tip-total"><span class="tip-label">数据源直连</span><span class="tip-val" style="color:var(--ok-color);">✓ ${q.quotaSourceLabel || 'Codex 周期已对齐'}</span></div>
+          `;
+        } else if (pool === 'gpt-7d' && quotaStatus.gpt) {
+          const q = quotaStatus.gpt;
+          const uPct = q.sevenDay.usedPercentage;
+          const color = uPct >= 85 ? 'var(--danger-color)' : uPct >= 65 ? 'var(--warn-color)' : 'var(--gpt-color)';
+          html = `
+            <div class="tip-header">
+              <span>🟩 OpenAI / GPT 7天周度滚动配额</span>
+              <span class="tip-badge badge-gpt">${q.planName}</span>
+            </div>
+            <div class="tip-row"><span class="tip-label">当前已用比例</span><span class="tip-val" style="color:${color};">${uPct}% (剩余 ${q.sevenDay.remainingPercentage}%)</span></div>
+            <div class="tip-ratio-bar"><div style="background-color:${color}; width:${Math.min(100, uPct)}%; height:100%;"></div></div>
+            <div class="tip-row"><span class="tip-label">周限额重置倒计时</span><span class="tip-val">${fmtResetCountdown(q.sevenDay.resetsAt)}</span></div>
+            <div class="tip-row"><span class="tip-label">周累计消耗金额</span><span class="tip-val">${fmtUsd(q.sevenDay.costUsd)} / ~$${q.sevenDayBudgetUsd}</span></div>
+            <div class="tip-row"><span class="tip-label">周累计交互量</span><span class="tip-val">${q.sevenDay.turns} 轮 · ${fmtTokens(q.sevenDay.totalTokens)} Tok</span></div>
+            <div class="tip-row tip-total"><span class="tip-label">数据源直连</span><span class="tip-val" style="color:var(--ok-color);">✓ ${q.quotaSourceLabel || 'Codex 周期已对齐'}</span></div>
+          `;
         }
         if (html) showTooltip(html, e);
       });
@@ -2703,7 +2836,7 @@
       try {
         const res = await fetch(`/api/snapshot?days=${selectedDays}&tz=${encodeURIComponent(selectedTimezone)}`);
         currentSnapshot = await res.json();
-        if (currentSnapshot?.engineVersion !== 6) {
+        if (currentSnapshot?.engineVersion !== 10) {
           if (!triedAutoUpgradeBackend) {
             triedAutoUpgradeBackend = true;
             statusEl.textContent = 'UPGRADING ENGINE...';
@@ -2732,13 +2865,15 @@
 
     function renderKpisAndToday() {
       const { todayStats, totals } = currentSnapshot;
+      const gptToday = todayStats?.gpt || { sessions: 0, turns: 0, totalTokens: 0, costUsd: 0, cacheSavingsUsd: 0, avgTps: 0 };
+      const gptTotals = totals.gpt || { sessions: 0, turns: 0, inputTokens: 0, cacheWriteTokens: 0, cacheReadTokens: 0, outputTokens: 0, totalTokens: 0, costUsd: 0, cacheSavingsUsd: 0, avgTps: 0 };
 
       if (todayStats) {
         document.getElementById('today-date-badge').textContent = todayStats.date.slice(5);
         document.getElementById('today-total-cost').textContent = fmtUsd(todayStats.combined.costUsd);
         document.getElementById('today-total-turns').textContent = `${todayStats.combined.turns.toLocaleString()} 轮`;
         document.getElementById('today-total-sub').textContent =
-          `${fmtTokens(todayStats.combined.totalTokens)} · C ${fmtUsd(todayStats.claude.costUsd)} / A ${fmtUsd(todayStats.antigravity.costUsd)}`;
+          `${fmtTokens(todayStats.combined.totalTokens)} · C ${fmtUsdShort(todayStats.claude.costUsd)} · A ${fmtUsdShort(todayStats.antigravity.costUsd)} · G ${fmtUsdShort(gptToday.costUsd)}`;
 
         document.getElementById('today-claude-sessions').textContent = `${todayStats.claude.sessions} 会话`;
         document.getElementById('today-claude-cost').textContent = fmtUsd(todayStats.claude.costUsd);
@@ -2752,7 +2887,14 @@
         document.getElementById('today-agy-cost').textContent = fmtUsd(agyT.costUsd);
         document.getElementById('today-agy-turns').textContent = `${agyT.turns.toLocaleString()} 轮`;
         document.getElementById('today-agy-sub').textContent =
-          `Gem ${agyT.geminiTurns}轮 (${fmtUsdShort(agyT.geminiCostUsd)}) · 3P ${agyT.thirdPartyTurns}轮 (${fmtUsd(agyT.thirdPartyCostUsd)})`;
+          `Gem ${agyT.geminiTurns}轮 (${fmtUsdShort(agyT.geminiCostUsd)}) · 3P ${agyT.thirdPartyTurns}轮 (${fmtUsdShort(agyT.thirdPartyCostUsd)})`;
+
+        document.getElementById('today-gpt-sessions').textContent = `${gptToday.sessions} 会话`;
+        document.getElementById('today-gpt-cost').textContent = fmtUsd(gptToday.costUsd);
+        document.getElementById('today-gpt-turns').textContent = `${gptToday.turns.toLocaleString()} 轮`;
+        const tgSpeed = gptToday.avgTps > 0 ? ` · ⚡${gptToday.avgTps} tok/s` : ` · 省 ${fmtUsdShort(gptToday.cacheSavingsUsd)}`;
+        document.getElementById('today-gpt-sub').textContent =
+          `${fmtTokens(gptToday.totalTokens)}${tgSpeed}`;
       }
 
       const periodText =
@@ -2768,6 +2910,8 @@
           ? totals.claude
           : selectedPlatform === 'antigravity'
           ? totals.antigravity
+          : selectedPlatform === 'gpt'
+          ? gptTotals
           : totals.combined;
 
       document.getElementById('kpi-total-tokens').textContent = fmtTokens(t.totalTokens);
@@ -2776,7 +2920,7 @@
 
       document.getElementById('kpi-total-cost').textContent = fmtUsd(t.costUsd);
       document.getElementById('kpi-cost-split').textContent =
-        `Claude ${fmtUsdShort(totals.claude.costUsd)} · AGY ${fmtUsdShort(totals.antigravity.costUsd)}`;
+        `C ${fmtUsdShort(totals.claude.costUsd)} · A ${fmtUsdShort(totals.antigravity.costUsd)} · G ${fmtUsdShort(gptTotals.costUsd)}`;
 
       const inputPool = t.inputTokens + t.cacheWriteTokens + t.cacheReadTokens;
       const hitRate = inputPool > 0 ? ((t.cacheReadTokens / inputPool) * 100).toFixed(1) : '0.0';
@@ -2785,9 +2929,9 @@
 
       document.getElementById('kpi-total-turns').textContent = `${t.turns.toLocaleString()} 轮`;
       document.getElementById('kpi-total-sessions').textContent = `${t.sessions} 会话`;
-      const speedBadge = t.avgTps > 0 ? ` · ⚡ ${t.avgTps} tok/s` : '';
+      const speedBadge = t.avgTps > 0 ? ` · ⚡${t.avgTps}/s` : '';
       document.getElementById('kpi-sessions-split').textContent =
-        `C ${totals.claude.sessions} · A ${totals.antigravity.sessions} 会话${speedBadge}`;
+        `C ${totals.claude.sessions} · A ${totals.antigravity.sessions} · G ${gptTotals.sessions} 会话${speedBadge}`;
     }
 
     function renderQuotaCards() {
@@ -2864,6 +3008,35 @@
         }
       }
 
+      // 1.5 OpenAI Codex / GPT Quota Console
+      const gq = quotaStatus.gpt;
+      if (gq) {
+        document.getElementById('gpt-plan-badge').textContent = gq.planName.replace('ChatGPT ', '');
+        document.getElementById('gpt-30d-inline').textContent =
+          `30d: ${fmtUsdShort(gq.thirtyDay.costUsd)} (${gq.thirtyDay.turns.toLocaleString()}轮 · ${fmtTokens(gq.thirtyDay.totalTokens)})`;
+        document.getElementById('gpt-roi-badge').textContent =
+          `回本 ${gq.thirtyDay.roiMultiplier}x`;
+
+        document.getElementById('gpt-5h-pct').textContent =
+          `已用 ${gq.fiveHour.usedPercentage}% · 剩 ${Math.round(gq.fiveHour.remainingPercentage)}%`;
+        renderVoxelBar('gpt-5h-bar', gq.fiveHour.usedPercentage, 'var(--gpt-color)');
+        document.getElementById('gpt-5h-detail').textContent =
+          `${gq.fiveHour.turns}轮 · ${fmtTokens(gq.fiveHour.totalTokens)} · ${fmtUsdShort(gq.fiveHour.costUsd)}/~${fmtUsdShort(gq.fiveHourBudgetUsd)}`;
+        document.getElementById('gpt-5h-reset').textContent = fmtResetCountdown(gq.fiveHour.resetsAt);
+
+        document.getElementById('gpt-7d-pct').textContent =
+          `已用 ${gq.sevenDay.usedPercentage}% · 剩 ${Math.round(gq.sevenDay.remainingPercentage)}%`;
+        renderVoxelBar('gpt-7d-bar', gq.sevenDay.usedPercentage, 'var(--gpt-color)');
+        document.getElementById('gpt-7d-detail').textContent =
+          `${gq.sevenDay.turns}轮 · ${fmtTokens(gq.sevenDay.totalTokens)} · ${fmtUsdShort(gq.sevenDay.costUsd)}/~${fmtUsdShort(gq.sevenDayBudgetUsd)}`;
+        document.getElementById('gpt-30d-summary').textContent = fmtResetCountdown(gq.sevenDay.resetsAt);
+
+        const gptPlanSelect = document.getElementById('select-gpt-plan');
+        if (gptPlanSelect) {
+          gptPlanSelect.value = gq.planId || currentSnapshot.settings.gptPlan || 'plus';
+        }
+      }
+
       document.getElementById('select-claude-plan').value = cq.planId || currentSnapshot.settings.claudePlan || 'pro';
       document.getElementById('select-agy-plan').value = aq.planId || currentSnapshot.settings.antigravityPlan || 'ultra5x';
       document.getElementById('snippet-claude-statusline').textContent = JSON.stringify(
@@ -2912,18 +3085,22 @@
       // Metric getter based on selectedChartMetric and selectedPlatform
       const getVal = (d) => {
         if (!d) return 0;
-        let c = d.claudeCostUsd;
-        let a = d.agyCostUsd;
+        let c = d.claudeCostUsd || 0;
+        let a = d.agyCostUsd || 0;
+        let g = d.gptCostUsd || 0;
         if (selectedChartMetric === 'tokens') {
-          c = d.claudeTokens;
-          a = d.agyTokens;
+          c = d.claudeTokens || 0;
+          a = d.agyTokens || 0;
+          g = d.gptTokens || 0;
         } else if (selectedChartMetric === 'turns') {
-          c = d.claudeTurns;
-          a = d.agyTurns;
+          c = d.claudeTurns || 0;
+          a = d.agyTurns || 0;
+          g = d.gptTurns || 0;
         }
         if (selectedPlatform === 'claude') return c;
         if (selectedPlatform === 'antigravity') return a;
-        return c + a;
+        if (selectedPlatform === 'gpt') return g;
+        return c + a + g;
       };
 
       // Determine anchor date in UTC+8 (latest in series or today in UTC+8)
@@ -3095,12 +3272,16 @@
           const weekdayStr = !isNaN(dateObj.getTime()) ? weekdays[dateObj.getDay()] : '';
 
           let html = '';
-          if (d && (d.claudeCostUsd > 0 || d.agyCostUsd > 0 || d.claudeTurns > 0 || d.agyTurns > 0)) {
-            const totCost = d.claudeCostUsd + d.agyCostUsd;
-            const totTokens = d.claudeTokens + d.agyTokens;
-            const totTurns = d.claudeTurns + d.agyTurns;
+          if (d && (d.claudeCostUsd > 0 || d.agyCostUsd > 0 || (d.gptCostUsd || 0) > 0 || d.claudeTurns > 0 || d.agyTurns > 0 || (d.gptTurns || 0) > 0)) {
+            const gCost = d.gptCostUsd || 0;
+            const gTokens = d.gptTokens || 0;
+            const gTurns = d.gptTurns || 0;
+            const totCost = d.claudeCostUsd + d.agyCostUsd + gCost;
+            const totTokens = d.claudeTokens + d.agyTokens + gTokens;
+            const totTurns = d.claudeTurns + d.agyTurns + gTurns;
             const cPct = totCost > 0 ? ((d.claudeCostUsd / totCost) * 100).toFixed(1) : 0;
-            const aPct = totCost > 0 ? (100 - cPct).toFixed(1) : 0;
+            const aPct = totCost > 0 ? ((d.agyCostUsd / totCost) * 100).toFixed(1) : 0;
+            const gPct = totCost > 0 ? Math.max(0, 100 - Number(cPct) - Number(aPct)).toFixed(1) : 0;
 
             html = `
               <div class="voxel-tip-head">
@@ -3122,16 +3303,22 @@
                   <span class="tip-val" style="color:var(--agy-color);">${fmtUsd(d.agyCostUsd)} (${d.agyTurns}轮 · ${fmtTokens(d.agyTokens)})</span>
                 </div>
                 <div class="tip-row">
+                  <span class="tip-label">🟩 OpenAI / GPT</span>
+                  <span class="tip-val" style="color:var(--gpt-color);">${fmtUsd(gCost)} (${gTurns}轮 · ${fmtTokens(gTokens)})</span>
+                </div>
+                <div class="tip-row">
                   <span class="tip-label">合计吞吐轮次</span>
                   <span class="tip-val">${totTurns.toLocaleString()} 轮 · ${fmtTokens(totTokens)}</span>
                 </div>
                 <div class="tip-ratio-bar">
-                  <div class="tip-ratio-part" style="inline-size: ${cPct}%; background: var(--claude-color);" title="Claude: ${cPct}%"></div>
-                  <div class="tip-ratio-part" style="inline-size: ${aPct}%; background: var(--agy-color);" title="AGY: ${aPct}%"></div>
+                  <div class="seg-claude" style="width: ${cPct}%;" title="Claude: ${cPct}%"></div>
+                  <div class="seg-agy" style="width: ${aPct}%;" title="AGY: ${aPct}%"></div>
+                  <div class="seg-gpt" style="width: ${gPct}%;" title="GPT: ${gPct}%"></div>
                 </div>
                 <div class="tip-row" style="font-size:0.65rem; color:var(--text-dim); margin-top:2px;">
-                  <span>Claude 占比: ${cPct}%</span>
-                  <span>AGY 占比: ${aPct}%</span>
+                  <span>C: ${cPct}%</span>
+                  <span>AGY: ${aPct}%</span>
+                  <span>GPT: ${gPct}%</span>
                 </div>
               </div>
             `;
@@ -3153,7 +3340,7 @@
         });
 
         tile.addEventListener('pointermove', e => {
-          positionTooltip(e.clientX, e.clientY);
+          updateTooltipPos(e);
         });
 
         tile.addEventListener('pointerleave', () => {
@@ -3181,17 +3368,32 @@
       const plotH = h - padT - padB;
 
       const getVal = (d, plat) => {
-        if (selectedChartMetric === 'tps') return plat === 'claude' ? (d.claudeAvgTps || 0) : (d.agyAvgTps || 0);
-        if (selectedChartMetric === 'tokens') return plat === 'claude' ? d.claudeTokens : d.agyTokens;
-        if (selectedChartMetric === 'turns') return plat === 'claude' ? d.claudeTurns : d.agyTurns;
-        return plat === 'claude' ? d.claudeCostUsd : d.agyCostUsd;
+        if (selectedChartMetric === 'tps') {
+          if (plat === 'claude') return d.claudeAvgTps || 0;
+          if (plat === 'gpt') return d.gptAvgTps || 0;
+          return d.agyAvgTps || 0;
+        }
+        if (selectedChartMetric === 'tokens') {
+          if (plat === 'claude') return d.claudeTokens || 0;
+          if (plat === 'gpt') return d.gptTokens || 0;
+          return d.agyTokens || 0;
+        }
+        if (selectedChartMetric === 'turns') {
+          if (plat === 'claude') return d.claudeTurns || 0;
+          if (plat === 'gpt') return d.gptTurns || 0;
+          return d.agyTurns || 0;
+        }
+        if (plat === 'claude') return d.claudeCostUsd || 0;
+        if (plat === 'gpt') return d.gptCostUsd || 0;
+        return d.agyCostUsd || 0;
       };
 
       let maxVal = 0;
       for (const d of series) {
-        const c = selectedPlatform === 'antigravity' ? 0 : getVal(d, 'claude');
-        const a = selectedPlatform === 'claude' ? 0 : getVal(d, 'antigravity');
-        const dayMax = selectedChartMetric === 'tps' ? Math.max(c, a) : c + a;
+        const c = (selectedPlatform === 'all' || selectedPlatform === 'claude') ? getVal(d, 'claude') : 0;
+        const a = (selectedPlatform === 'all' || selectedPlatform === 'antigravity') ? getVal(d, 'antigravity') : 0;
+        const g = (selectedPlatform === 'all' || selectedPlatform === 'gpt') ? getVal(d, 'gpt') : 0;
+        const dayMax = selectedChartMetric === 'tps' ? Math.max(c, a, g) : c + a + g;
         if (dayMax > maxVal) maxVal = dayMax;
       }
       if (maxVal <= 0) maxVal = 1;
@@ -3206,32 +3408,45 @@
       let hoverHighlightsSvg = '';
 
       series.forEach((d, idx) => {
-        const cVal = selectedPlatform === 'antigravity' ? 0 : getVal(d, 'claude');
-        const aVal = selectedPlatform === 'claude' ? 0 : getVal(d, 'antigravity');
+        const cVal = (selectedPlatform === 'all' || selectedPlatform === 'claude') ? getVal(d, 'claude') : 0;
+        const aVal = (selectedPlatform === 'all' || selectedPlatform === 'antigravity') ? getVal(d, 'antigravity') : 0;
+        const gVal = (selectedPlatform === 'all' || selectedPlatform === 'gpt') ? getVal(d, 'gpt') : 0;
         const cH = (cVal / maxVal) * plotH;
         const aH = (aVal / maxVal) * plotH;
+        const gH = (gVal / maxVal) * plotH;
 
         const x = padL + idx * barStep + (barStep - barW) / 2;
         const colX = padL + idx * barStep;
         const yClaude = padT + plotH - cH;
         const yAgy = selectedChartMetric === 'tps' ? (padT + plotH - aH) : (yClaude - aH);
+        const yGpt = selectedChartMetric === 'tps' ? (padT + plotH - gH) : (yAgy - gH);
 
         // Subtle background highlight column (visible on hover)
         hoverHighlightsSvg += `
           <rect id="daily-col-hl-${idx}" class="chart-col-hover" x="${colX.toFixed(1)}" y="${padT}" width="${barStep.toFixed(1)}" height="${plotH}" fill="var(--agy-soft)" opacity="0" />
         `;
 
-        // 3D Voxel blocks (side-by-side when metric === 'tps' and both platforms active, otherwise stacked)
-        if (selectedChartMetric === 'tps' && cH > 0 && aH > 0) {
-          const halfW = Math.max(2.5, (barW - 1) / 2);
-          barsSvg += drawVoxelBlock(x, yClaude, halfW, cH, 'var(--claude-color)', 'var(--claude-top)', 'var(--claude-side)', isoDx, isoDy);
-          barsSvg += drawVoxelBlock(x + halfW + 1, yAgy, halfW, aH, 'var(--agy-color)', 'var(--agy-top)', 'var(--agy-side)', isoDx, isoDy);
+        // 3D Voxel blocks (side-by-side when metric === 'tps' and multiple platforms active, otherwise stacked)
+        if (selectedChartMetric === 'tps') {
+          const activeBars = [];
+          if (cH > 0) activeBars.push({ h: cH, y: yClaude, c: 'var(--claude-color)', t: 'var(--claude-top)', s: 'var(--claude-side)' });
+          if (aH > 0) activeBars.push({ h: aH, y: yAgy, c: 'var(--agy-color)', t: 'var(--agy-top)', s: 'var(--agy-side)' });
+          if (gH > 0) activeBars.push({ h: gH, y: yGpt, c: 'var(--gpt-color)', t: 'var(--gpt-top)', s: 'var(--gpt-side)' });
+          if (activeBars.length > 0) {
+            const subW = Math.max(2, (barW - (activeBars.length - 1)) / activeBars.length);
+            activeBars.forEach((b, bIdx) => {
+              barsSvg += drawVoxelBlock(x + bIdx * (subW + 1), b.y, subW, b.h, b.c, b.t, b.s, isoDx, isoDy);
+            });
+          }
         } else {
           if (cH > 0) {
             barsSvg += drawVoxelBlock(x, yClaude, barW, cH, 'var(--claude-color)', 'var(--claude-top)', 'var(--claude-side)', isoDx, isoDy);
           }
           if (aH > 0) {
             barsSvg += drawVoxelBlock(x, yAgy, barW, aH, 'var(--agy-color)', 'var(--agy-top)', 'var(--agy-side)', isoDx, isoDy);
+          }
+          if (gH > 0) {
+            barsSvg += drawVoxelBlock(x, yGpt, barW, gH, 'var(--gpt-color)', 'var(--gpt-top)', 'var(--gpt-side)', isoDx, isoDy);
           }
         }
 
@@ -3281,11 +3496,15 @@
           const d = series[idx];
           if (!d) return;
 
-          const totalCost = d.claudeCostUsd + d.agyCostUsd;
+          const gCost = d.gptCostUsd || 0;
+          const gTurns = d.gptTurns || 0;
+          const gTokens = d.gptTokens || 0;
+          const totalCost = d.claudeCostUsd + d.agyCostUsd + gCost;
           const cPct = totalCost > 0 ? Math.round((d.claudeCostUsd / totalCost) * 100) : 0;
-          const aPct = totalCost > 0 ? (100 - cPct) : 0;
-          const totalTurns = d.claudeTurns + d.agyTurns;
-          const totalTokens = d.claudeTokens + d.agyTokens;
+          const aPct = totalCost > 0 ? Math.round((d.agyCostUsd / totalCost) * 100) : 0;
+          const gPct = totalCost > 0 ? Math.max(0, 100 - cPct - aPct) : 0;
+          const totalTurns = d.claudeTurns + d.agyTurns + gTurns;
+          const totalTokens = d.claudeTokens + d.agyTokens + gTokens;
 
           const html = `
             <div class="tip-header">
@@ -3306,9 +3525,17 @@
             <div class="tip-row" style="font-size:0.68rem; color:var(--text-secondary); margin-inline-start:1.2rem;">
               <span>${d.agyTurns} 轮 · ${fmtTokens(d.agyTokens)} Tok${d.agyAvgTps > 0 ? ` · ⚡${d.agyAvgTps} tok/s` : ''}</span>
             </div>
+            <div class="tip-row">
+              <span class="tip-label">🟩 OpenAI / GPT</span>
+              <span class="tip-val">$${gCost.toFixed(2)} <span style="color:var(--text-secondary);font-size:0.68rem;">(${gPct}%)</span></span>
+            </div>
+            <div class="tip-row" style="font-size:0.68rem; color:var(--text-secondary); margin-inline-start:1.2rem;">
+              <span>${gTurns} 轮 · ${fmtTokens(gTokens)} Tok${d.gptAvgTps > 0 ? ` · ⚡${d.gptAvgTps} tok/s` : ''}</span>
+            </div>
             <div class="tip-ratio-bar">
               <div class="seg-claude" style="width: ${cPct}%;"></div>
               <div class="seg-agy" style="width: ${aPct}%;"></div>
+              <div class="seg-gpt" style="width: ${gPct}%;"></div>
             </div>
             <div class="tip-row tip-total">
               <span class="tip-label">💰 当日等价总值</span>
@@ -3347,10 +3574,11 @@
       let maxTurns = 1;
       let peakHour = 0;
       for (const hr of hours) {
-        const c = selectedPlatform === 'antigravity' ? 0 : hr.claudeTurns;
-        const a = selectedPlatform === 'claude' ? 0 : hr.agyTurns;
-        if (c + a > maxTurns) {
-          maxTurns = c + a;
+        const c = (selectedPlatform === 'all' || selectedPlatform === 'claude') ? (hr.claudeTurns || 0) : 0;
+        const a = (selectedPlatform === 'all' || selectedPlatform === 'antigravity') ? (hr.agyTurns || 0) : 0;
+        const g = (selectedPlatform === 'all' || selectedPlatform === 'gpt') ? (hr.gptTurns || 0) : 0;
+        if (c + a + g > maxTurns) {
+          maxTurns = c + a + g;
           peakHour = hr.hour;
         }
       }
@@ -3366,14 +3594,17 @@
       let hoverHighlightsSvg = '';
 
       hours.forEach((hr, i) => {
-        const c = selectedPlatform === 'antigravity' ? 0 : hr.claudeTurns;
-        const a = selectedPlatform === 'claude' ? 0 : hr.agyTurns;
+        const c = (selectedPlatform === 'all' || selectedPlatform === 'claude') ? (hr.claudeTurns || 0) : 0;
+        const a = (selectedPlatform === 'all' || selectedPlatform === 'antigravity') ? (hr.agyTurns || 0) : 0;
+        const g = (selectedPlatform === 'all' || selectedPlatform === 'gpt') ? (hr.gptTurns || 0) : 0;
         const cH = (c / maxTurns) * plotH;
         const aH = (a / maxTurns) * plotH;
+        const gH = (g / maxTurns) * plotH;
         const x = padL + i * step + (step - barW) / 2;
         const colX = padL + i * step;
         const yC = padT + plotH - cH;
         const yA = yC - aH;
+        const yG = yA - gH;
 
         hoverHighlightsSvg += `
           <rect id="hourly-col-hl-${hr.hour}" class="chart-col-hover" x="${colX.toFixed(1)}" y="${padT}" width="${step.toFixed(1)}" height="${plotH}" fill="var(--agy-soft)" opacity="0" />
@@ -3384,6 +3615,9 @@
         }
         if (aH > 0) {
           bars += drawVoxelBlock(x, yA, barW, aH, 'var(--agy-color)', 'var(--agy-top)', 'var(--agy-side)', isoDx, isoDy);
+        }
+        if (gH > 0) {
+          bars += drawVoxelBlock(x, yG, barW, gH, 'var(--gpt-color)', 'var(--gpt-top)', 'var(--gpt-side)', isoDx, isoDy);
         }
 
         hitColumnsSvg += `
@@ -3418,9 +3652,11 @@
           const hr = hours[hour];
           if (!hr) return;
 
-          const totalTurns = hr.claudeTurns + hr.agyTurns;
+          const gTurns = hr.gptTurns || 0;
+          const totalTurns = hr.claudeTurns + hr.agyTurns + gTurns;
           const cPct = totalTurns > 0 ? Math.round((hr.claudeTurns / totalTurns) * 100) : 0;
-          const aPct = totalTurns > 0 ? (100 - cPct) : 0;
+          const aPct = totalTurns > 0 ? Math.round((hr.agyTurns / totalTurns) * 100) : 0;
+          const gPct = totalTurns > 0 ? Math.max(0, 100 - cPct - aPct) : 0;
 
           const html = `
             <div class="tip-header">
@@ -3435,9 +3671,14 @@
               <span class="tip-label">🟦 Antigravity 交互</span>
               <span class="tip-val">${hr.agyTurns} 轮 <span style="color:var(--text-secondary);font-size:0.68rem;">(${aPct}%)</span></span>
             </div>
+            <div class="tip-row">
+              <span class="tip-label">🟩 OpenAI / GPT 交互</span>
+              <span class="tip-val">${gTurns} 轮 <span style="color:var(--text-secondary);font-size:0.68rem;">(${gPct}%)</span></span>
+            </div>
             <div class="tip-ratio-bar">
               <div class="seg-claude" style="width: ${cPct}%;"></div>
               <div class="seg-agy" style="width: ${aPct}%;"></div>
+              <div class="seg-gpt" style="width: ${gPct}%;"></div>
             </div>
             <div class="tip-row tip-total">
               <span class="tip-label">⚡ 时段总吞吐</span>
@@ -3531,8 +3772,8 @@
         <tr>
           <td style="font-weight: 700;" class="truncate-cell" title="${m.model}">${m.model}</td>
           <td>
-            <span class="badge ${m.platform === 'claude' ? 'badge-claude' : 'badge-agy'}">
-              ${m.platform === 'claude' ? 'Claude' : 'AGY'}
+            <span class="badge ${m.platform === 'claude' ? 'badge-claude' : m.platform === 'gpt' ? 'badge-gpt' : 'badge-agy'}">
+              ${m.platform === 'claude' ? 'Claude' : m.platform === 'gpt' ? 'GPT' : 'AGY'}
             </span>
           </td>
           <td class="num">${m.turns.toLocaleString()}</td>
@@ -3550,6 +3791,7 @@
       const projects = (currentSnapshot.projects || []).filter(p => {
         if (selectedPlatform === 'all') return true;
         if (selectedPlatform === 'claude') return p.platforms.some(s => s.includes('Claude'));
+        if (selectedPlatform === 'gpt') return p.platforms.some(s => /Codex|GPT|OpenAI/i.test(s));
         return p.platforms.some(s => s.includes('Antigravity'));
       });
       document.getElementById('projects-count-label').textContent = `共 ${projects.length} 个项目`;
@@ -3594,8 +3836,8 @@
             ${isToday ? '<span class="badge badge-today" style="margin-inline-end:0.25rem;">今日</span>' : ''}${fmtRelativeTime(s.lastTimestamp)}
           </td>
           <td>
-            <span class="badge ${s.platform === 'claude' ? 'badge-claude' : 'badge-agy'}">
-              ${s.surface.replace('Claude ', 'C-').replace('Antigravity ', 'AGY-')}
+            <span class="badge ${s.platform === 'claude' ? 'badge-claude' : s.platform === 'gpt' ? 'badge-gpt' : 'badge-agy'}">
+              ${s.surface.replace('Claude ', 'C-').replace('Antigravity ', 'AGY-').replace('Codex Desktop', 'Codex')}
             </span>
           </td>
           <td class="truncate-cell" style="font-weight: 700;" title="${s.title.replace(/"/g, '&quot;')}">
@@ -3640,6 +3882,15 @@
         fiveHourBudget = cq.fiveHourBudgetUsd;
         sevenDayBudget = cq.sevenDayBudgetUsd;
         sourceNote = cq.quotaSourceLabel || 'Claude 官方周周期对齐';
+      } else if (poolKey === 'gpt') {
+        const gq = quotaStatus.gpt;
+        poolTitle = '🟩 OpenAI / GPT 7天周额度 · 每日消耗与 5 小时窗口统计';
+        planTag = gq?.planName || 'ChatGPT Plus';
+        colorVar = 'var(--gpt-color)';
+        sevenDayObj = gq?.sevenDay;
+        fiveHourBudget = gq?.fiveHourBudgetUsd || 45;
+        sevenDayBudget = gq?.sevenDayBudgetUsd || 315;
+        sourceNote = gq?.quotaSourceLabel || 'OpenAI Codex 周周期对齐';
       } else if (poolKey === 'agy-gemini') {
         const aq = quotaStatus.antigravity;
         poolTitle = '🟦 Antigravity Gemini 原生池 · 每日周额度与 5 小时窗口统计';
@@ -3666,7 +3917,7 @@
       const planTagEl = document.getElementById('wb-plan-tag');
       const shortPlanTag = String(planTag || '')
         .replace(/\s*\(.*?\)/g, '')
-        .replace(/^(Claude|Gemini|Google\s+AI)\s+/i, '')
+        .replace(/^(Claude|Gemini|Google\s+AI|ChatGPT)\s+/i, '')
         .trim();
       planTagEl.textContent = shortPlanTag || planTag;
       planTagEl.title = planTag;
@@ -3819,6 +4070,7 @@
     const quotaColumn = document.getElementById('quota-column');
     const chartsColumn = document.getElementById('charts-column');
     const claudeCard = document.getElementById('card-quota-claude');
+    const gptCard = document.getElementById('card-quota-gpt');
     const agyCard = document.getElementById('card-quota-agy');
     const heatmapCard = document.getElementById('card-daily-heatmap');
     const dailyChartCard = document.getElementById('card-chart-daily');
@@ -3918,7 +4170,7 @@
       }
     }
 
-    setupDragReorder([claudeCard, agyCard, heatmapCard], quotaColumn, 'voxel-quota-order');
+    setupDragReorder([claudeCard, gptCard, agyCard, heatmapCard], quotaColumn, 'voxel-quota-order');
     setupDragReorder([dailyChartCard, hourlyChartCard], chartsColumn, 'voxel-charts-order');
 
     // 1. Vertical Splitter between Left Quota Column and Right Charts Column
@@ -4044,10 +4296,11 @@
       if (dailyChartCard) dailyChartCard.style.flex = '1';
       if (hourlyChartCard) hourlyChartCard.style.flex = '1';
       // Reset DOM order in left column
-      if (quotaColumn && claudeCard && agyCard && tpCard) {
+      if (quotaColumn && claudeCard && gptCard && agyCard && heatmapCard) {
         quotaColumn.appendChild(claudeCard);
+        quotaColumn.appendChild(gptCard);
         quotaColumn.appendChild(agyCard);
-        quotaColumn.appendChild(tpCard);
+        quotaColumn.appendChild(heatmapCard);
       }
       // Reset DOM order in right column
       if (chartsColumn && dailyChartCard && splitterChartsRow && hourlyChartCard) {
@@ -4281,6 +4534,8 @@
     // Clicking the 7D meter boxes also opens the corresponding daily weekly-quota breakdown
     const boxClaude7d = document.getElementById('box-claude-7d');
     if (boxClaude7d) boxClaude7d.addEventListener('click', () => openWeeklyBreakdown('claude'));
+    const boxGpt7d = document.getElementById('box-gpt-7d');
+    if (boxGpt7d) boxGpt7d.addEventListener('click', () => openWeeklyBreakdown('gpt'));
     const boxAgyGem7d = document.getElementById('box-agy-gemini-7d');
     if (boxAgyGem7d) boxAgyGem7d.addEventListener('click', () => openWeeklyBreakdown('agy-gemini'));
     const boxAgyTp7d = document.getElementById('box-agy-tp-7d');
@@ -4396,7 +4651,8 @@
       e.preventDefault();
       const payload = {
         claudePlan: document.getElementById('select-claude-plan').value,
-        antigravityPlan: document.getElementById('select-agy-plan').value
+        antigravityPlan: document.getElementById('select-agy-plan').value,
+        gptPlan: document.getElementById('select-gpt-plan').value
       };
       await fetch('/api/settings', {
         method: 'POST',

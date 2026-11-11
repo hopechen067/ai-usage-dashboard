@@ -65,6 +65,17 @@ async function main() {
       return;
     }
 
+    // Detect OpenAI Codex / GPT Hook payload
+    if (mode === '--gpt-hook' || mode === '--codex-hook' || payload['thread-id'] || payload.thread_id) {
+      saveLiveQuota('gpt', {
+        lastThreadId: payload['thread-id'] || payload.thread_id || null,
+        lastTurnId: payload['turn-id'] || payload.turn_id || null,
+        activeModel: payload.model || null
+      });
+      process.stdout.write('{}');
+      return;
+    }
+
     process.stdout.write('{}');
   } catch {
     process.stdout.write('{}');
