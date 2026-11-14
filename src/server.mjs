@@ -107,8 +107,9 @@ const server = http.createServer(async (req, res) => {
       const days =
         daysParam === 'all' || daysParam === 'today' ? daysParam : Number(daysParam) || 30;
       const tz = url.searchParams.get('tz') || null;
+      const force = url.searchParams.get('force') === '1' || url.searchParams.get('force') === 'true';
       const collector = await getCollector();
-      const snapshot = await collector.getDashboardSnapshot({ days, tz });
+      const snapshot = await collector.getDashboardSnapshot({ days, tz, force });
       snapshot.hookScriptPath = HOOK_SCRIPT_PATH;
       return sendJson(res, 200, snapshot);
     }

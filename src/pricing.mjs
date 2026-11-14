@@ -3,13 +3,15 @@
 
 import { resolveUnknownModel } from './model-registry.mjs';
 
-export const PRICING_VERSION = 14;
+export const PRICING_VERSION = 16;
 
-// Gemini 4 Argon Official Rates:
-// Thinking effort (low / medium / high) uses the exact same unit price!
+// Gemini 4 Frontier (Carbon & Argon) Official Rates:
+// Thinking effort (low / medium / high / xhigh) uses the exact same unit price!
 // Output price includes thinking tokens.
 // Implicit caching (prompt >= 4096) provides a 95% discount (5% of input price), cacheWrite is $0.
+// Gemini 4 Hydrogen Official Rates: $1.50 Input / $7.50 Output / $0.075 Cache read (flat, implicit caching).
 export const ARGON_STANDARD_START_MS = Date.parse('2026-12-01T00:00:00Z');
+export const FLASH_STANDARD_START_MS = Date.parse('2027-01-01T00:00:00Z');
 
 export const GEMINI_ARGON_RATES = {
   intro: {
@@ -27,6 +29,25 @@ export const GEMINI_ARGON_RATES = {
     outputPer1M: 20.0,
     cacheWritePer1M: 0.0,
     cacheReadPer1M: 0.20 // 95% 折扣 ($4.00 * 0.05)
+  }
+};
+
+export const GEMINI_FLASH_RATES = {
+  intro: {
+    tier: 'intro',
+    label: '介绍期（至 2026-12-31）',
+    inputPer1M: 0.75,
+    outputPer1M: 3.75,
+    cacheWritePer1M: 0.0,
+    cacheReadPer1M: 0.075 // 90% 折扣 ($0.75 * 0.10)
+  },
+  standard: {
+    tier: 'standard',
+    label: '标准价（2027-01-01 起）',
+    inputPer1M: 1.5,
+    outputPer1M: 7.5,
+    cacheWritePer1M: 0.0,
+    cacheReadPer1M: 0.15 // 90% 折扣 ($1.50 * 0.10)
   }
 };
 
@@ -176,6 +197,58 @@ export const MODEL_PRICING = {
     quotaWeight: 2.0
   },
 
+  // Gemini 4 Carbon family (same intro/standard schedule as Argon: $2/$10/$0.10 thru 2026-11-30, $4/$20/$0.20 from 2026-12-01)
+  'gemini-4-carbon-xhigh': {
+    label: 'Gemini 4 Carbon (xHigh)',
+    family: 'Gemini 4 Carbon',
+    provider: 'Google',
+    inputPer1M: 2.0,
+    outputPer1M: 10.0,
+    cacheWritePer1M: 0.0,
+    cacheReadPer1M: 0.10,
+    quotaWeight: 1.0
+  },
+  'gemini-4-carbon-high': {
+    label: 'Gemini 4 Carbon (High)',
+    family: 'Gemini 4 Carbon',
+    provider: 'Google',
+    inputPer1M: 2.0,
+    outputPer1M: 10.0,
+    cacheWritePer1M: 0.0,
+    cacheReadPer1M: 0.10,
+    quotaWeight: 1.0
+  },
+  'gemini-4-carbon-medium': {
+    label: 'Gemini 4 Carbon (Medium)',
+    family: 'Gemini 4 Carbon',
+    provider: 'Google',
+    inputPer1M: 2.0,
+    outputPer1M: 10.0,
+    cacheWritePer1M: 0.0,
+    cacheReadPer1M: 0.10,
+    quotaWeight: 1.0
+  },
+  'gemini-4-carbon-low': {
+    label: 'Gemini 4 Carbon (Low)',
+    family: 'Gemini 4 Carbon',
+    provider: 'Google',
+    inputPer1M: 2.0,
+    outputPer1M: 10.0,
+    cacheWritePer1M: 0.0,
+    cacheReadPer1M: 0.10,
+    quotaWeight: 1.0
+  },
+  'gemini-4-carbon': {
+    label: 'Gemini 4 Carbon',
+    family: 'Gemini 4 Carbon',
+    provider: 'Google',
+    inputPer1M: 2.0,
+    outputPer1M: 10.0,
+    cacheWritePer1M: 0.0,
+    cacheReadPer1M: 0.10,
+    quotaWeight: 1.0
+  },
+
   // Gemini 4 Argon family
   // Official rule: Thinking effort levels (low / medium / high) share the exact same unit price and quota weight!
   // Cost differences come purely from thinking token volume.
@@ -218,6 +291,91 @@ export const MODEL_PRICING = {
     cacheWritePer1M: 0.0,
     cacheReadPer1M: 0.10,
     quotaWeight: 1.0
+  },
+
+  // Gemini 4 Hydrogen family ($1.50 Input / $7.50 Output / $0.075 Cache read; supports low/medium/high/xhigh)
+  'gemini-4-hydrogen-xhigh': {
+    label: 'Gemini 4 Hydrogen (xHigh)',
+    family: 'Gemini 4 Hydrogen',
+    provider: 'Google',
+    inputPer1M: 1.50,
+    outputPer1M: 7.50,
+    cacheWritePer1M: 0.0,
+    cacheReadPer1M: 0.075,
+    quotaWeight: 0.75
+  },
+  'gemini-4-hydrogen-high': {
+    label: 'Gemini 4 Hydrogen (High)',
+    family: 'Gemini 4 Hydrogen',
+    provider: 'Google',
+    inputPer1M: 1.50,
+    outputPer1M: 7.50,
+    cacheWritePer1M: 0.0,
+    cacheReadPer1M: 0.075,
+    quotaWeight: 0.75
+  },
+  'gemini-4-hydrogen-medium': {
+    label: 'Gemini 4 Hydrogen (Medium)',
+    family: 'Gemini 4 Hydrogen',
+    provider: 'Google',
+    inputPer1M: 1.50,
+    outputPer1M: 7.50,
+    cacheWritePer1M: 0.0,
+    cacheReadPer1M: 0.075,
+    quotaWeight: 0.75
+  },
+  'gemini-4-hydrogen-low': {
+    label: 'Gemini 4 Hydrogen (Low)',
+    family: 'Gemini 4 Hydrogen',
+    provider: 'Google',
+    inputPer1M: 1.50,
+    outputPer1M: 7.50,
+    cacheWritePer1M: 0.0,
+    cacheReadPer1M: 0.075,
+    quotaWeight: 0.75
+  },
+  'gemini-4-hydrogen': {
+    label: 'Gemini 4 Hydrogen',
+    family: 'Gemini 4 Hydrogen',
+    provider: 'Google',
+    inputPer1M: 1.50,
+    outputPer1M: 7.50,
+    cacheWritePer1M: 0.0,
+    cacheReadPer1M: 0.075,
+    quotaWeight: 0.75
+  },
+
+  // Antigravity Orchestrator Modes (dynamically route between Carbon/Argon planning and Hydrogen execution;
+  // per-call gen_metadata bills each actual model turn directly, while fallback/mode entries use planner rates)
+  'gemini-pro-orchestrator': {
+    label: 'Orchestrator (Carbon)',
+    family: 'Orchestrator',
+    provider: 'Google',
+    inputPer1M: 2.0,
+    outputPer1M: 10.0,
+    cacheWritePer1M: 0.0,
+    cacheReadPer1M: 0.10,
+    quotaWeight: 1.0
+  },
+  'gemini-pro-orchestrator-argon': {
+    label: 'Orchestrator (Argon)',
+    family: 'Orchestrator',
+    provider: 'Google',
+    inputPer1M: 2.0,
+    outputPer1M: 10.0,
+    cacheWritePer1M: 0.0,
+    cacheReadPer1M: 0.10,
+    quotaWeight: 1.0
+  },
+  'gemini-orchestrator-executor': {
+    label: 'Orchestrator · Hydrogen',
+    family: 'Orchestrator',
+    provider: 'Google',
+    inputPer1M: 1.50,
+    outputPer1M: 7.50,
+    cacheWritePer1M: 0.0,
+    cacheReadPer1M: 0.075,
+    quotaWeight: 0.75
   },
 
   // Gemini 3.8 Flash family (Introductory: $0.75 / $3.75 / $0.075 through 2026-12-31)
@@ -267,123 +425,133 @@ export const MODEL_PRICING = {
     label: 'Gemini 3 Pro',
     family: 'Gemini 3',
     provider: 'Google',
-    inputPer1M: 1.25,
-    outputPer1M: 10.0,
+    inputPer1M: 2.00,
+    outputPer1M: 12.0,
     cacheWritePer1M: 0.0,
-    cacheReadPer1M: 0.125,
-    quotaWeight: 1.0
-  },
-  'gpt-oss-120b': {
-    label: 'GPT-OSS 120B (Medium)',
-    family: 'GPT-OSS',
-    provider: 'OpenAI',
-    inputPer1M: 1.50,
-    outputPer1M: 6.0,
-    cacheWritePer1M: 0.0,
-    cacheReadPer1M: 0.15,
-    quotaWeight: 0.6
+    cacheReadPer1M: 0.20,
+    quotaWeight: 1.0,
+    longContextThreshold: 200_000,
+    longContextInputMultiplier: 2.0,
+    longContextOutputMultiplier: 1.5
   },
 
-  // OpenAI Codex / GPT-6 & GPT-5.6 Series
-  'gpt-6-astra': {
-    label: 'GPT-6-Astra',
-    family: 'GPT-6',
-    provider: 'OpenAI',
-    inputPer1M: 5.0,
-    outputPer1M: 20.0,
-    cacheWritePer1M: 0.0,
-    cacheReadPer1M: 0.50,
-    quotaWeight: 2.0
-  },
+  // OpenAI Codex / GPT-6, GPT-6.1 & GPT-5.6 Official API Pricing
+  // Note: 'gpt-6.1-sol' is listed first among 'gpt-*' keys so unknown future 'gpt-*' models inherit its baseline rates.
   'gpt-6.1-sol': {
     label: 'GPT-6.1-Sol',
     family: 'GPT-6.1',
     provider: 'OpenAI',
-    inputPer1M: 2.50,
+    inputPer1M: 2.00,
     outputPer1M: 10.0,
-    cacheWritePer1M: 0.0,
-    cacheReadPer1M: 0.25,
-    quotaWeight: 1.0
+    cacheWritePer1M: 2.50,
+    cacheReadPer1M: 0.10,
+    quotaWeight: 1.0,
+    longContextThreshold: 272_000,
+    longContextInputMultiplier: 2.0,
+    longContextOutputMultiplier: 1.5
+  },
+  'gpt-6-astra': {
+    label: 'GPT-6-Astra',
+    family: 'GPT-6',
+    provider: 'OpenAI',
+    inputPer1M: 10.0,
+    outputPer1M: 50.0,
+    cacheWritePer1M: 12.50,
+    cacheReadPer1M: 1.00,
+    quotaWeight: 5.0
   },
   'gpt-6.1-terra': {
     label: 'GPT-6.1 Terra',
     family: 'GPT-6.1',
     provider: 'OpenAI',
-    inputPer1M: 2.00,
-    outputPer1M: 8.0,
-    cacheWritePer1M: 0.0,
-    cacheReadPer1M: 0.20,
-    quotaWeight: 0.8
+    inputPer1M: 1.00,
+    outputPer1M: 5.00,
+    cacheWritePer1M: 1.25,
+    cacheReadPer1M: 0.05,
+    quotaWeight: 0.5,
+    longContextThreshold: 272_000,
+    longContextInputMultiplier: 2.0,
+    longContextOutputMultiplier: 1.5
   },
   'gpt-6-sol': {
     label: 'GPT-6-Sol',
     family: 'GPT-6',
     provider: 'OpenAI',
     inputPer1M: 2.00,
-    outputPer1M: 8.0,
-    cacheWritePer1M: 0.0,
+    outputPer1M: 10.0,
+    cacheWritePer1M: 2.50,
     cacheReadPer1M: 0.20,
-    quotaWeight: 0.8
+    quotaWeight: 1.0
+  },
+  'gpt-6-terra': {
+    label: 'GPT-6-Terra',
+    family: 'GPT-6',
+    provider: 'OpenAI',
+    inputPer1M: 1.00,
+    outputPer1M: 5.00,
+    cacheWritePer1M: 1.25,
+    cacheReadPer1M: 0.10,
+    quotaWeight: 0.5
   },
   'gpt-6-luna': {
     label: 'GPT-6-Luna',
     family: 'GPT-6',
     provider: 'OpenAI',
-    inputPer1M: 0.80,
-    outputPer1M: 3.20,
-    cacheWritePer1M: 0.0,
-    cacheReadPer1M: 0.08,
-    quotaWeight: 0.35
+    inputPer1M: 0.10,
+    outputPer1M: 0.50,
+    cacheWritePer1M: 0.125,
+    cacheReadPer1M: 0.01,
+    quotaWeight: 0.05
   },
   'gpt-reserve': {
     label: 'GPT-Reserve',
     family: 'GPT-6',
     provider: 'OpenAI',
-    inputPer1M: 0.60,
-    outputPer1M: 2.40,
-    cacheWritePer1M: 0.0,
-    cacheReadPer1M: 0.06,
-    quotaWeight: 0.25
+    inputPer1M: 0.10,
+    outputPer1M: 0.50,
+    cacheWritePer1M: 0.125,
+    cacheReadPer1M: 0.01,
+    quotaWeight: 0.05
   },
   'gpt-5.6-sol': {
     label: 'GPT-5.6-Sol',
     family: 'GPT-5.6',
     provider: 'OpenAI',
-    inputPer1M: 1.50,
-    outputPer1M: 6.00,
-    cacheWritePer1M: 0.0,
-    cacheReadPer1M: 0.15,
-    quotaWeight: 0.6
+    inputPer1M: 4.00,
+    outputPer1M: 20.0,
+    cacheWritePer1M: 5.00,
+    cacheReadPer1M: 0.40,
+    quotaWeight: 2.0
   },
   'gpt-5.6-terra': {
     label: 'GPT-5.6-Terra',
     family: 'GPT-5.6',
     provider: 'OpenAI',
-    inputPer1M: 1.25,
-    outputPer1M: 5.00,
-    cacheWritePer1M: 0.0,
-    cacheReadPer1M: 0.125,
-    quotaWeight: 0.5
+    inputPer1M: 2.00,
+    outputPer1M: 12.0,
+    cacheWritePer1M: 2.50,
+    cacheReadPer1M: 0.20,
+    quotaWeight: 1.0
   },
   'gpt-5.6-luna': {
     label: 'GPT-5.6-Luna',
     family: 'GPT-5.6',
     provider: 'OpenAI',
-    inputPer1M: 0.40,
-    outputPer1M: 1.60,
-    cacheWritePer1M: 0.0,
-    cacheReadPer1M: 0.04,
-    quotaWeight: 0.2
+    inputPer1M: 0.20,
+    outputPer1M: 1.20,
+    cacheWritePer1M: 0.25,
+    cacheReadPer1M: 0.02,
+    quotaWeight: 0.1
   },
   'codex-auto-review': {
     label: 'Codex Auto Review',
     family: 'Codex',
     provider: 'OpenAI',
-    inputPer1M: 0.40,
-    outputPer1M: 1.60,
+    inputPer1M: 0.0,
+    outputPer1M: 0.0,
     cacheWritePer1M: 0.0,
-    cacheReadPer1M: 0.04,
-    quotaWeight: 0.2
+    cacheReadPer1M: 0.0,
+    quotaWeight: 0.0
   },
   'gpt-5': {
     label: 'GPT-5',
@@ -424,6 +592,16 @@ export const MODEL_PRICING = {
     cacheWritePer1M: 0.0,
     cacheReadPer1M: 1.25,
     quotaWeight: 1.0
+  },
+  'gpt-oss-120b': {
+    label: 'GPT-OSS 120B (Medium)',
+    family: 'GPT-OSS',
+    provider: 'OpenAI',
+    inputPer1M: 0.15,
+    outputPer1M: 0.60,
+    cacheWritePer1M: 0.0,
+    cacheReadPer1M: 0.075,
+    quotaWeight: 0.1
   }
 };
 
@@ -433,24 +611,24 @@ export const SUBSCRIPTION_PLANS = {
       id: 'plus',
       name: 'ChatGPT Plus ($20/月)',
       monthlyPriceUsd: 20,
-      fiveHourBudgetUsd: 45.0,
-      sevenDayBudgetUsd: 315.0,
+      fiveHourBudgetUsd: 26.5,
+      sevenDayBudgetUsd: 120.0,
       fiveHourTurnsSoftCap: 160
     },
     team: {
       id: 'team',
       name: 'ChatGPT Team ($30/月)',
       monthlyPriceUsd: 30,
-      fiveHourBudgetUsd: 90.0,
-      sevenDayBudgetUsd: 630.0,
+      fiveHourBudgetUsd: 53.0,
+      sevenDayBudgetUsd: 240.0,
       fiveHourTurnsSoftCap: 320
     },
     pro: {
       id: 'pro',
       name: 'ChatGPT Pro ($200/月)',
       monthlyPriceUsd: 200,
-      fiveHourBudgetUsd: 900.0,
-      sevenDayBudgetUsd: 6300.0,
+      fiveHourBudgetUsd: 530.0,
+      sevenDayBudgetUsd: 2400.0,
       fiveHourTurnsSoftCap: 3200
     }
   },
@@ -556,32 +734,55 @@ export function normalizeModelKey(rawModel = '') {
   if (m.includes('gpt-6.1-sol') || m.includes('gpt-6.1 sol')) return 'gpt-6.1-sol';
   if (m.includes('gpt-6.1-terra') || m.includes('gpt-6.1 terra')) return 'gpt-6.1-terra';
   if (m.includes('gpt-6-sol') || m.includes('gpt-6 sol')) return 'gpt-6-sol';
+  if (m.includes('gpt-6-terra') || m.includes('gpt-6 terra')) return 'gpt-6-terra';
   if (m.includes('gpt-6-luna') || m.includes('gpt-6 luna')) return 'gpt-6-luna';
   if (m.includes('gpt-reserve') || m.includes('gpt reserve')) return 'gpt-reserve';
-  if (m.includes('gpt-5.6-sol') || m.includes('gpt-5.6 sol')) return 'gpt-5.6-sol';
   if (m.includes('gpt-5.6-terra') || m.includes('gpt-5.6 terra')) return 'gpt-5.6-terra';
   if (m.includes('gpt-5.6-luna') || m.includes('gpt-5.6 luna')) return 'gpt-5.6-luna';
+  if (m.includes('gpt-5.6-sol') || m.includes('gpt-5.6 sol') || m === 'gpt-5.6' || /^gpt-5\.6(\s|\(|-)/.test(m)) {
+    return 'gpt-5.6-sol';
+  }
   if (m.includes('codex-auto-review') || m.includes('auto-review')) return 'codex-auto-review';
   if (m.includes('o4-mini')) return 'o4-mini';
-  if (m === 'o3' || m.startsWith('o3-')) return 'o3';
+  if (m === 'o3' || m.startsWith('o3-') || m.startsWith('o3 ')) return 'o3';
   if (m.includes('gpt-4o')) return 'gpt-4o';
-  if (m.includes('gpt-5')) return 'gpt-5';
-  if (m.includes('gpt')) return 'gpt-6.1-sol';
+  if (m === 'gpt-5' || /^gpt-5(\s*\(|-(high|medium|low|xhigh|minimal|202\d))/.test(m)) return 'gpt-5';
+
+  // Google Orchestrator Modes (must be checked before flash/argon/carbon)
+  if (m === 'gemini-orchestrator-executor' || m.includes('flash-worker-agy') || m.includes('orchestrator · hydrogen')) {
+    return 'gemini-orchestrator-executor';
+  }
+  if (m.includes('orchestrator')) {
+    if (m.includes('argon')) return 'gemini-pro-orchestrator-argon';
+    return 'gemini-pro-orchestrator';
+  }
+
+  const pickEffortSuffix = (allowXHigh = false) => {
+    if (allowXHigh && /\bxhigh\b/.test(m)) return '-xhigh';
+    if (/\bhigh\b/.test(m)) return '-high';
+    if (/\bmedium\b/.test(m)) return '-medium';
+    if (/\blow\b/.test(m)) return '-low';
+    return '';
+  };
+
+  // Google Hydrogen Family
+  if (m.includes('hydrogen')) {
+    return `gemini-4-hydrogen${pickEffortSuffix(true)}`;
+  }
+
+  // Google Carbon Family
+  if (m.includes('carbon')) {
+    return `gemini-4-carbon${pickEffortSuffix(true)}`;
+  }
 
   // Google Flash Family
   if (m.includes('flash')) {
-    if (m.includes('high')) return 'gemini-flash-high';
-    if (m.includes('low')) return 'gemini-flash-low';
-    if (m.includes('medium')) return 'gemini-flash-medium';
-    return 'gemini-flash';
+    return `gemini-flash${pickEffortSuffix(false)}`;
   }
 
   // Google Argon Family
   if (m.includes('argon')) {
-    if (m.includes('low')) return 'gemini-4-argon-low';
-    if (m.includes('medium')) return 'gemini-4-argon-medium';
-    if (m.includes('high')) return 'gemini-4-argon-high';
-    return 'gemini-4-argon';
+    return `gemini-4-argon${pickEffortSuffix(false)}`;
   }
 
   if (m.includes('gemini 3') || m.includes('gemini-3')) {
@@ -647,10 +848,14 @@ export function getModelSpec(rawModel, timestamp = null) {
     else if (m.includes('minimal')) label = `${label} (Minimal)`;
   }
 
-  // Dynamic pricing for Gemini 4 Argon:
+  // Dynamic pricing for Gemini 4 Carbon / Argon (and Orchestrator planner modes):
   // Introductory price ($2 / $10 / $0.10) until 2026-11-30 23:59:59 UTC
   // Standard price ($4 / $20 / $0.20) starting 2026-12-01 00:00:00 UTC
-  if (key.startsWith('gemini-4-argon')) {
+  if (
+    key.startsWith('gemini-4-argon') ||
+    key.startsWith('gemini-4-carbon') ||
+    key.startsWith('gemini-pro-orchestrator')
+  ) {
     const tsMs = timestamp
       ? (typeof timestamp === 'number' ? timestamp : Date.parse(timestamp))
       : Date.now();
@@ -659,6 +864,28 @@ export function getModelSpec(rawModel, timestamp = null) {
 
     return {
       ...baseSpec,
+      label,
+      inputPer1M: rates.inputPer1M,
+      outputPer1M: rates.outputPer1M,
+      cacheWritePer1M: rates.cacheWritePer1M,
+      cacheReadPer1M: rates.cacheReadPer1M,
+      pricingTier: rates.tier
+    };
+  }
+
+  // Dynamic pricing for Gemini 3.8 Flash:
+  // Introductory price ($0.75 / $3.75 / $0.075) until 2026-12-31 23:59:59 UTC
+  // Standard price ($1.50 / $7.50 / $0.15) starting 2027-01-01 00:00:00 UTC
+  if (key.startsWith('gemini-flash')) {
+    const tsMs = timestamp
+      ? (typeof timestamp === 'number' ? timestamp : Date.parse(timestamp))
+      : Date.now();
+    const isStandard = !Number.isNaN(tsMs) && tsMs >= FLASH_STANDARD_START_MS;
+    const rates = isStandard ? GEMINI_FLASH_RATES.standard : GEMINI_FLASH_RATES.intro;
+
+    return {
+      ...baseSpec,
+      label,
       inputPer1M: rates.inputPer1M,
       outputPer1M: rates.outputPer1M,
       cacheWritePer1M: rates.cacheWritePer1M,
@@ -680,18 +907,31 @@ export function calculateTurnCost({
   timestamp = null
 }) {
   const spec = getModelSpec(model, timestamp);
+  const totalPromptTokens = inputTokens + cacheReadTokens + cacheCreationTokens;
+  const isLongContext =
+    typeof spec.longContextThreshold === 'number' &&
+    spec.longContextThreshold > 0 &&
+    totalPromptTokens > spec.longContextThreshold;
 
-  const inputCost = (inputTokens / 1_000_000) * spec.inputPer1M;
-  const cacheWriteCost = (cacheCreationTokens / 1_000_000) * spec.cacheWritePer1M;
-  const cacheReadCost = (cacheReadTokens / 1_000_000) * spec.cacheReadPer1M;
-  const outputCost = (outputTokens / 1_000_000) * spec.outputPer1M;
+  const inMult = isLongContext ? (spec.longContextInputMultiplier ?? 2.0) : 1.0;
+  const outMult = isLongContext ? (spec.longContextOutputMultiplier ?? 1.5) : 1.0;
+
+  const effInputPer1M = spec.inputPer1M * inMult;
+  const effCacheWritePer1M = spec.cacheWritePer1M * inMult;
+  const effCacheReadPer1M = spec.cacheReadPer1M * inMult;
+  const effOutputPer1M = spec.outputPer1M * outMult;
+
+  const inputCost = (inputTokens / 1_000_000) * effInputPer1M;
+  const cacheWriteCost = (cacheCreationTokens / 1_000_000) * effCacheWritePer1M;
+  const cacheReadCost = (cacheReadTokens / 1_000_000) * effCacheReadPer1M;
+  const outputCost = (outputTokens / 1_000_000) * effOutputPer1M;
 
   // Thinking tokens are already part of outputTokens and billed at the same outputPer1M rate
-  const thinkingCost = (thinkingTokens / 1_000_000) * spec.outputPer1M;
+  const thinkingCost = (thinkingTokens / 1_000_000) * effOutputPer1M;
 
   const totalCostUsd = inputCost + cacheWriteCost + cacheReadCost + outputCost;
   const uncachedEquivalentUsd =
-    ((inputTokens + cacheReadTokens + cacheCreationTokens) / 1_000_000) * spec.inputPer1M + outputCost;
+    (totalPromptTokens / 1_000_000) * effInputPer1M + outputCost;
   const cacheSavingsUsd = Math.max(0, uncachedEquivalentUsd - totalCostUsd);
 
   return {
@@ -705,6 +945,6 @@ export function calculateTurnCost({
     thinkingCost,
     modelLabel: spec.label,
     modelFamily: spec.family,
-    pricingTier: spec.pricingTier || 'standard'
+    pricingTier: isLongContext ? 'long-context' : (spec.pricingTier || 'standard')
   };
 }

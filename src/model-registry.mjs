@@ -63,7 +63,7 @@ export function slugifyModel(raw = '') {
 
 export function detectProvider(raw = '') {
   const s = String(raw).toLowerCase();
-  if (/gemini|gemma|argon|carbon|flash/.test(s)) return 'Google';
+  if (/gemini|gemma|argon|carbon|hydrogen|orchestrator|flash/.test(s)) return 'Google';
   if (/claude|opus|sonnet|haiku|fable|mythos/.test(s)) return 'Anthropic';
   if (/gpt|codex|\bo\d\b|\bo\d-/.test(s)) return 'OpenAI';
   return 'Unknown';

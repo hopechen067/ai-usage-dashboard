@@ -2022,7 +2022,7 @@
           <div class="pool-subgroup">
             <div class="pool-subgroup-title">
               <span class="pool-subgroup-name">Gemini 原生模型池</span>
-              <span class="pool-subgroup-models">Argon · Pro · 3.8 Flash</span>
+              <span class="pool-subgroup-models">Carbon · Argon · Hydrogen · Orchestrator · Flash</span>
             </div>
             <div class="quota-bars-grid">
               <div class="meter-box" id="box-agy-gemini-5h" data-quota-pool="agy-gemini-5h">
@@ -2731,7 +2731,7 @@
           html = `
             <div class="tip-header">
               <span>🟦 Gemini 原生 5H 窗口</span>
-              <span class="tip-badge badge-agy">Argon · Pro · Flash</span>
+              <span class="tip-badge badge-agy">Carbon · Argon · Hydrogen · Orchestrator</span>
             </div>
             <div class="tip-row"><span class="tip-label">已用百分比</span><span class="tip-val" style="color:${color};">${uPct}% (剩余 ${q.fiveHour.remainingPercentage}%)</span></div>
             <div class="tip-ratio-bar"><div style="background-color:${color}; width:${Math.min(100, uPct)}%; height:100%;"></div></div>
@@ -2747,7 +2747,7 @@
           html = `
             <div class="tip-header">
               <span>🟦 Gemini 原生 7D 周限额</span>
-              <span class="tip-badge badge-agy">Argon · Pro · Flash</span>
+              <span class="tip-badge badge-agy">Carbon · Argon · Hydrogen · Orchestrator</span>
             </div>
             <div class="tip-row"><span class="tip-label">已用百分比</span><span class="tip-val" style="color:${color};">${uPct}% (剩余 ${q.sevenDay.remainingPercentage}%)</span></div>
             <div class="tip-ratio-bar"><div style="background-color:${color}; width:${Math.min(100, uPct)}%; height:100%;"></div></div>
@@ -2830,11 +2830,12 @@
     let triedAutoUpgradeBackend = false;
     let upgradePollRetries = 0;
 
-    async function fetchSnapshot() {
+    async function fetchSnapshot(force = false) {
       const statusEl = document.getElementById('scan-status');
       statusEl.textContent = 'SYNCING...';
       try {
-        const res = await fetch(`/api/snapshot?days=${selectedDays}&tz=${encodeURIComponent(selectedTimezone)}`);
+        const forceParam = force ? '&force=1' : '';
+        const res = await fetch(`/api/snapshot?days=${selectedDays}&tz=${encodeURIComponent(selectedTimezone)}${forceParam}`);
         currentSnapshot = await res.json();
         if (currentSnapshot?.engineVersion !== 10) {
           if (!triedAutoUpgradeBackend) {
@@ -3899,7 +3900,7 @@
         sevenDayObj = aq.sevenDay;
         fiveHourBudget = aq.fiveHourBudgetUsd;
         sevenDayBudget = aq.sevenDayBudgetUsd;
-        sourceNote = 'Argon · Pro · 3.8 Flash 原生池';
+        sourceNote = 'Carbon · Argon · Hydrogen · Orchestrator · 3.8 Flash 原生池';
       } else if (poolKey === 'agy-tp') {
         const aq = quotaStatus.antigravity;
         const tp = aq.thirdParty;
@@ -4619,7 +4620,7 @@
     });
 
     document.getElementById('session-search').addEventListener('input', () => renderTables());
-    document.getElementById('btn-refresh').addEventListener('click', () => fetchSnapshot());
+    document.getElementById('btn-refresh').addEventListener('click', () => fetchSnapshot(true));
 
     document.getElementById('btn-launch-widget').addEventListener('click', async () => {
       const btn = document.getElementById('btn-launch-widget');
