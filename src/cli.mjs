@@ -52,8 +52,12 @@ if (snap.todayStats) {
   console.log(
     `  ├─ 今日 Claude    : $${ts.claude.costUsd.toFixed(2)} | ${ts.claude.turns} 轮 (${ts.claude.sessions} 会话) | ${fmtTok(ts.claude.totalTokens)} tokens${cTps}`
   );
+  const extSuffix =
+    ts.antigravity.externalApiTurns > 0
+      ? ` · Vertex/API ${ts.antigravity.externalApiTurns}轮 ($${ts.antigravity.externalApiCostUsd.toFixed(2)})`
+      : '';
   console.log(
-    `  └─ 今日 Antigravity: $${ts.antigravity.costUsd.toFixed(2)} | ${ts.antigravity.turns} 轮 (${ts.antigravity.sessions} 会话) | Gemini ${ts.antigravity.geminiTurns}轮 ($${ts.antigravity.geminiCostUsd.toFixed(2)}) · 第三方 ${ts.antigravity.thirdPartyTurns}轮 ($${ts.antigravity.thirdPartyCostUsd.toFixed(2)})${aTps}\n`
+    `  └─ 今日 Antigravity: $${ts.antigravity.costUsd.toFixed(2)} | ${ts.antigravity.turns} 轮 (${ts.antigravity.sessions} 会话) | Gemini ${ts.antigravity.geminiTurns}轮 ($${ts.antigravity.geminiCostUsd.toFixed(2)}) · 第三方 ${ts.antigravity.thirdPartyTurns}轮 ($${ts.antigravity.thirdPartyCostUsd.toFixed(2)})${extSuffix}${aTps}\n`
   );
 }
 
@@ -76,6 +80,12 @@ for (const key of ['claude', 'antigravity']) {
       `  ├─ [第三方 Claude & GPT 7d] : 已用 ${tp.sevenDay.usedPercentage}% (面板剩余 ${tp.sevenDay.nativeRemainingPct}%) | ${tp.sevenDay.turns} 轮 | ${fmtTok(tp.sevenDay.totalTokens)} tokens | 等价 $${tp.sevenDay.costUsd.toFixed(2)} / ~$${tp.sevenDayBudgetUsd}`
     );
   }
+  if (q.externalApi?.sevenDay?.turns > 0) {
+    const ext = q.externalApi;
+    console.log(
+      `  ├─ [Vertex AI / API 已排除出订阅配额] : 7天 ${ext.sevenDay.turns} 轮 ($${ext.sevenDay.costUsd.toFixed(2)}) | 30天 ${ext.thirtyDay.turns} 轮 ($${ext.thirtyDay.costUsd.toFixed(2)})`
+    );
+  }
   console.log(
     `  └─ 30天订阅回本率: ${q.thirtyDay.roiPercentage}% (${q.thirtyDay.roiMultiplier}x) — 已用出 $${q.thirtyDay.costUsd.toFixed(2)} 等价 API 价值 (缓存省 $${q.thirtyDay.cacheSavingsUsd.toFixed(2)})\n`
   );
@@ -84,8 +94,9 @@ for (const key of ['claude', 'antigravity']) {
 console.log(`--- 模型消耗明细 ---`);
 for (const m of snap.models) {
   const tpsStr = m.avgTps > 0 ? `${String(m.avgTps).padStart(5)} tok/s (峰 ${String(m.peakTps).padStart(5)})` : `   -- tok/s           `;
+  const srcTag = m.isExternalApi ? '[API] ' : '';
   console.log(
-    `  • [${m.platform.toUpperCase()}] ${m.model.padEnd(24)} | ${String(m.turns).padStart(5)} 轮 | 总计 ${fmtTok(m.totalTokens).padStart(8)} (缓存命中 ${m.cacheHitRate}%) | 速率 ${tpsStr} | 等价 $${m.costUsd.toFixed(2).padStart(7)} (${m.sharePct}%)`
+    `  • [${m.platform.toUpperCase()}] ${srcTag}${m.model.padEnd(24)} | ${String(m.turns).padStart(5)} 轮 | 总计 ${fmtTok(m.totalTokens).padStart(8)} (缓存命中 ${m.cacheHitRate}%) | 速率 ${tpsStr} | 等价 $${m.costUsd.toFixed(2).padStart(7)} (${m.sharePct}%)`
   );
 }
 console.log('');

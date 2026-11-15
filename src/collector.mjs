@@ -14,9 +14,11 @@ let lastPricingMtimeMs = 0;
 
 // Incremental file parse cache: filePath -> { mtimeMs, size, pricingVersion, data }
 let ENGINE_VERSION = staticPricing.PRICING_VERSION;
-const CODEX_PARSER_VERSION = 3;
-const AGY_PARSER_VERSION = 2;
+const CLAUDE_PARSER_VERSION = 3;
+const CODEX_PARSER_VERSION = 5;
+const AGY_PARSER_VERSION = 5;
 const fileCache = new Map();
+const logFileCache = new Map();
 let cacheDirty = false;
 
 async function refreshPricingModule() {
@@ -157,7 +159,8 @@ function parseClaudeJsonlFile(filePath, stat) {
     cached &&
     cached.mtimeMs === stat.mtimeMs &&
     cached.size === stat.size &&
-    cached.pricingVersion === ENGINE_VERSION
+    cached.pricingVersion === ENGINE_VERSION &&
+    cached.claudeParserVersion === CLAUDE_PARSER_VERSION
   ) {
     return cached.data;
   }
@@ -168,7 +171,7 @@ function parseClaudeJsonlFile(filePath, stat) {
   const turnMap = new Map();
   const uuidMap = new Map();
   let lastPreRequestTsMs = null;
-  let sessionId = path.basename(filePath, '.jsonl');
+  let sessionId = '';
   let cwd = '';
   let firstUserPrompt = '';
   let firstTimestamp = null;
@@ -267,7 +270,13 @@ function parseClaudeJsonlFile(filePath, stat) {
           }
         }
 
-        // Always keep latest entry for the same message.id
+        const prevTokTotal = prev
+          ? prev.inputTokens + prev.cacheCreationTokens + prev.cacheReadTokens + prev.outputTokens
+          : -1;
+        const curTokTotal = inputTokens + cacheCreationTokens + cacheReadTokens + outputTokens;
+        const keepPrevUsage = curTokTotal < prevTokTotal;
+
+        // Always keep the entry with highest cumulative usage for the same message.id
         turnMap.set(msgId, {
           id: msgId,
           platform: 'claude',
@@ -275,14 +284,14 @@ function parseClaudeJsonlFile(filePath, stat) {
             cwd.includes('AppData\\Roaming\\Claude') || cwd.includes('AppData/Roaming/Claude')
               ? 'Claude Desktop'
               : 'Claude Code CLI',
-          sessionId,
+          sessionId: sessionId || path.basename(filePath, '.jsonl'),
           timestamp: obj.timestamp || lastTimestamp || new Date(stat.mtimeMs).toISOString(),
-          model: msg.model,
-          inputTokens,
-          cacheCreationTokens,
-          cacheReadTokens,
-          outputTokens,
-          thinkingTokens,
+          model: msg.model || prev?.model,
+          inputTokens: keepPrevUsage ? prev.inputTokens : inputTokens,
+          cacheCreationTokens: keepPrevUsage ? prev.cacheCreationTokens : cacheCreationTokens,
+          cacheReadTokens: keepPrevUsage ? prev.cacheReadTokens : cacheReadTokens,
+          outputTokens: keepPrevUsage ? prev.outputTokens : outputTokens,
+          thinkingTokens: keepPrevUsage ? prev.thinkingTokens : thinkingTokens,
           toolCallsCount: toolIds.size,
           toolIds,
           reqStartMs,
@@ -291,6 +300,11 @@ function parseClaudeJsonlFile(filePath, stat) {
         });
       }
     } catch {}
+  }
+
+  if (!sessionId) sessionId = path.basename(filePath, '.jsonl');
+  for (const t of turnMap.values()) {
+    t.sessionId = sessionId;
   }
 
   const turns = Array.from(turnMap.values()).map(({ toolIds, reqStartMs, endTsMs, ...t }) => {
@@ -351,6 +365,7 @@ function parseClaudeJsonlFile(filePath, stat) {
     mtimeMs: stat.mtimeMs,
     size: stat.size,
     pricingVersion: ENGINE_VERSION,
+    claudeParserVersion: CLAUDE_PARSER_VERSION,
     data
   });
   cacheDirty = true;
@@ -380,43 +395,77 @@ function scanAllClaudeSessions() {
   }
   walk(claudeProjectsDir);
 
-  // Merge files sharing the same sessionId (e.g., main session + subagent files)
-  const sessionsById = new Map();
+  // Parse all non-empty Claude JSONL files first
+  const parsedFiles = [];
   for (const file of jsonlFiles) {
     try {
       const stat = fs.statSync(file);
       const parsed = parseClaudeJsonlFile(file, stat);
-      if (parsed.turns.length === 0) continue;
-
-      const existing = sessionsById.get(parsed.sessionId);
-      if (!existing) {
-        sessionsById.set(parsed.sessionId, {
-          ...parsed,
-          turns: [...parsed.turns]
-        });
-      } else {
-        // Merge turns deduplicating by turn.id
-        const turnIds = new Set(existing.turns.map(t => t.id));
-        for (const t of parsed.turns) {
-          if (!turnIds.has(t.id)) {
-            existing.turns.push(t);
-            turnIds.add(t.id);
-          }
-        }
-        if (parsed.firstTimestamp < existing.firstTimestamp) {
-          existing.firstTimestamp = parsed.firstTimestamp;
-        }
-        if (parsed.lastTimestamp > existing.lastTimestamp) {
-          existing.lastTimestamp = parsed.lastTimestamp;
-        }
-        if (existing.title.startsWith('Claude Session') && !parsed.title.startsWith('Claude Session')) {
-          existing.title = parsed.title;
-        }
-      }
+      if (parsed.turns.length > 0) parsedFiles.push(parsed);
     } catch {}
   }
 
-  return Array.from(sessionsById.values());
+  // Merge files sharing the same sessionId (e.g., mirrored AppData paths or subagent logs)
+  const sessionsById = new Map();
+  const bestTurnById = new Map();
+  const turnTotalTok = t =>
+    (t.inputTokens || 0) + (t.cacheCreationTokens || 0) + (t.cacheReadTokens || 0) + (t.outputTokens || 0);
+
+  for (const parsed of parsedFiles) {
+    for (const t of parsed.turns) {
+      const prev = bestTurnById.get(t.id);
+      if (!prev || turnTotalTok(t) > turnTotalTok(prev)) {
+        bestTurnById.set(t.id, t);
+      }
+    }
+    const existing = sessionsById.get(parsed.sessionId);
+    if (!existing) {
+      sessionsById.set(parsed.sessionId, {
+        ...parsed,
+        turns: [...parsed.turns]
+      });
+    } else {
+      const turnIds = new Set(existing.turns.map(t => t.id));
+      for (const t of parsed.turns) {
+        if (!turnIds.has(t.id)) {
+          existing.turns.push(t);
+          turnIds.add(t.id);
+        }
+      }
+      if (parsed.firstTimestamp < existing.firstTimestamp) {
+        existing.firstTimestamp = parsed.firstTimestamp;
+      }
+      if (parsed.lastTimestamp > existing.lastTimestamp) {
+        existing.lastTimestamp = parsed.lastTimestamp;
+      }
+      if (existing.title.startsWith('Claude Session') && !parsed.title.startsWith('Claude Session')) {
+        existing.title = parsed.title;
+      }
+    }
+  }
+
+  // Globally deduplicate forked/worktree sessions sharing the same message.id across files
+  const mergedSessions = Array.from(sessionsById.values()).sort((a, b) => {
+    const tsCmp = String(a.firstTimestamp || '').localeCompare(String(b.firstTimestamp || ''));
+    if (tsCmp !== 0) return tsCmp;
+    return b.turns.length - a.turns.length;
+  });
+
+  const claimedTurnIds = new Set();
+  const finalSessions = [];
+  for (const sess of mergedSessions) {
+    const uniqueTurns = [];
+    for (const rawTurn of sess.turns) {
+      if (claimedTurnIds.has(rawTurn.id)) continue;
+      claimedTurnIds.add(rawTurn.id);
+      const best = bestTurnById.get(rawTurn.id) || rawTurn;
+      uniqueTurns.push(best.sessionId === sess.sessionId ? best : { ...best, sessionId: sess.sessionId });
+    }
+    if (uniqueTurns.length === 0) continue;
+    finalSessions.push({ ...sess, turns: uniqueTurns });
+  }
+
+  return finalSessions;
 }
 
 // 2. Scan Google Antigravity sessions across antigravity, antigravity-cli, antigravity-ide
@@ -516,6 +565,7 @@ function loadGenModelRows(dbPath) {
         };
         let modelEnum = '';
         let cascadeId = '';
+        let lastStepIndex = null;
         for (const x of f) {
           if (x.fn === 20 && x.b) {
             try {
@@ -524,16 +574,24 @@ function loadGenModelRows(dbPath) {
               const v = kv.find(y => y.fn === 2 && y.b)?.b.toString('utf8');
               if (k === 'model_enum' && v) modelEnum = v;
               else if (k === 'cascade_id' && v) cascadeId = v;
+              else if (k === 'last_step_index' && v !== undefined) {
+                const n = Number(v);
+                if (Number.isFinite(n)) lastStepIndex = n;
+              }
             } catch {}
           }
         }
+        const respBytes = u.find(x => x.fn === 11 && x.b)?.b;
         rows.push({
           inputTokens: Number(u.find(x => x.fn === 2)?.v ?? -1n),
           outputTokens: Number(u.find(x => x.fn === 3)?.v ?? -1n),
+          cacheReadTokens: Number(u.find(x => x.fn === 5)?.v ?? 0n),
+          lastStepIndex,
           modelId: str(19),
           label: str(21),
           modelEnum,
-          cascadeId
+          cascadeId,
+          responseId: respBytes ? respBytes.toString('utf8') : ''
         });
       } catch {
         rows.push(null);
@@ -573,6 +631,9 @@ const GEN_MODEL_ENUM_MAP = {
   MODEL_PLACEHOLDER_M526: 'gemini-4-hydrogen-medium',
   MODEL_PLACEHOLDER_M527: 'gemini-4-hydrogen-low',
   MODEL_PLACEHOLDER_M528: 'gemini-4-hydrogen-xhigh',
+  MODEL_PLACEHOLDER_M346: 'gemini-4-hydrogen-high',       // Vertex AI / Gateway Hydrogen High
+  MODEL_PLACEHOLDER_M340: 'gemini-4-hydrogen',            // Vertex AI / Gateway Hydrogen
+  MODEL_PLACEHOLDER_M461: 'gemini-4-hydrogen-high',       // Vertex AI / Gateway Hydrogen (High)
   MODEL_PLACEHOLDER_M427: 'gemini-4-carbon-high',
   MODEL_PLACEHOLDER_M437: 'gemini-4-carbon-medium',
   MODEL_PLACEHOLDER_M438: 'gemini-4-carbon-low',
@@ -591,8 +652,99 @@ const GEN_MODEL_ENUM_MAP = {
   MODEL_PLACEHOLDER_M405: 'claude-sonnet-5-5-high'
 };
 
+// Enum IDs exclusively observed on external Vertex AI / gateway configs (never in Antigravity consumer configs)
+const EXTERNAL_API_MODEL_ENUMS = new Set([
+  'MODEL_PLACEHOLDER_M340',
+  'MODEL_PLACEHOLDER_M346',
+  'MODEL_PLACEHOLDER_M461'
+]);
+
+/**
+ * Parse ~/.gemini/<surface>/log/cli*.log to map ResponseID -> authMethod / request URL.
+ * Distinguishes Antigravity consumer subscription calls (cloudcode-pa + authMethod=consumer)
+ * from Vertex AI / local gateway / ADC calls.
+ */
+function loadAntigravityLogIndex(surfaceRoot) {
+  const responseMap = new Map();
+  const logDir = path.join(surfaceRoot, 'log');
+  if (!fs.existsSync(logDir)) return responseMap;
+
+  let logFiles = [];
+  try {
+    logFiles = fs
+      .readdirSync(logDir, { withFileTypes: true })
+      .filter(d => d.isFile() && /^cli(?:-[A-Za-z0-9_.-]+)?\.log$/i.test(d.name))
+      .map(d => path.join(logDir, d.name))
+      .sort();
+  } catch {
+    return responseMap;
+  }
+
+  for (const logPath of logFiles) {
+    try {
+      const st = fs.statSync(logPath);
+      const cached = logFileCache.get(logPath);
+      let entries;
+      if (cached && cached.mtimeMs === st.mtimeMs && cached.size === st.size) {
+        entries = cached.entries;
+      } else {
+        entries = [];
+        const content = fs.readFileSync(logPath, 'utf8');
+        let currentAuthMethod = '';
+        for (const line of content.split(/\r?\n/)) {
+          const authMatch = line.match(/applyAuthResult:.*?\bauthMethod=([A-Za-z0-9_-]+)/);
+          if (authMatch) {
+            currentAuthMethod = authMatch[1].toLowerCase();
+            continue;
+          }
+          const reqMatch = line.match(/URL:\s*(https?:\/\/\S+).*?\bResponseID:\s*([A-Za-z0-9_-]+)/);
+          if (!reqMatch) continue;
+          const url = reqMatch[1];
+          const responseId = reqMatch[2];
+          const isConsumerUrl = url.includes('cloudcode-pa.googleapis.com');
+          const isConsumerAuth = !currentAuthMethod || currentAuthMethod === 'consumer';
+          const isExternalApi = !isConsumerUrl || !isConsumerAuth;
+          let billingSource = 'subscription';
+          if (isExternalApi) {
+            if (currentAuthMethod === 'gateway' || /127\.0\.0\.1|localhost/i.test(url)) {
+              billingSource = 'vertex-gateway';
+            } else if (currentAuthMethod === 'adc' || /aiplatform\.googleapis\.com/i.test(url)) {
+              billingSource = 'vertex-ai';
+            } else {
+              billingSource = 'external-api';
+            }
+          }
+          entries.push({
+            responseId,
+            info: { isExternalApi, billingSource, endpoint: url, authMethod: currentAuthMethod }
+          });
+        }
+        logFileCache.set(logPath, { mtimeMs: st.mtimeMs, size: st.size, entries });
+      }
+      for (const item of entries) {
+        responseMap.set(item.responseId, item.info);
+      }
+    } catch {}
+  }
+  return responseMap;
+}
+
+function classifyAntigravityTurnSource({ responseId, modelEnum, rawLabel, logIndex }) {
+  if (responseId && logIndex?.has(responseId)) {
+    return logIndex.get(responseId);
+  }
+  if (modelEnum && EXTERNAL_API_MODEL_ENUMS.has(modelEnum)) {
+    return { isExternalApi: true, billingSource: 'vertex-ai' };
+  }
+  const trimmed = String(rawLabel || '').trim();
+  if (/^(?:projects\/|gemini-4-hydrogen(?:-(?:low|medium|high|xhigh))?$)/.test(trimmed)) {
+    return { isExternalApi: true, billingSource: 'vertex-ai' };
+  }
+  return { isExternalApi: false, billingSource: 'subscription' };
+}
+
 /** Align transcript turns to gen_metadata rows (same order) and stamp the real model on each turn. */
-function applyGenModels(turns, rows, convId = '') {
+function applyGenModels(turns, rows, convId = '', logIndex = null) {
   if (!rows || rows.length === 0 || turns.length === 0) return 0;
   const filteredRows =
     convId && rows.some(r => r && r.cascadeId === convId)
@@ -614,6 +766,18 @@ function applyGenModels(turns, rows, convId = '') {
     if (hit < 0) return;
     j = hit + 1;
     const row = filteredRows[hit];
+    t.responseId = row.responseId || '';
+    t.modelEnum = row.modelEnum || '';
+    t.rawModelLabel = row.label || row.modelId || '';
+    const srcInfo = classifyAntigravityTurnSource({
+      responseId: t.responseId,
+      modelEnum: t.modelEnum,
+      rawLabel: t.rawModelLabel,
+      logIndex
+    });
+    t.isExternalApi = Boolean(srcInfo.isExternalApi);
+    t.billingSource = srcInfo.billingSource || (t.isExternalApi ? 'vertex-ai' : 'subscription');
+
     const mappedByEnum = row.modelEnum ? GEN_MODEL_ENUM_MAP[row.modelEnum] : '';
     const name =
       mappedByEnum ||
@@ -649,6 +813,7 @@ function parseAntigravityTranscript(filePath, stat, convId, surfaceLabel, meta =
   const lines = content.split('\n');
 
   let activeModel = meta.agentName === 'research' ? 'Gemini 3.8 Flash' : 'Gemini 4 Argon (High)';
+  let activeModelIsExternalSlug = false;
   let hasExplicitModel = false;
   let swarmMemberName = '';
   let detectedParentId = meta.parentConversationId || '';
@@ -658,6 +823,7 @@ function parseAntigravityTranscript(filePath, stat, convId, surfaceLabel, meta =
   let lastTimestamp = null;
   let workspaceFromLogs = meta.workspacePath || '';
   const turns = [];
+  const legacyPlannerSteps = [];
   const parsedSteps = [];
 
   for (let i = 0; i < lines.length; i++) {
@@ -732,6 +898,7 @@ function parseAntigravityTranscript(filePath, stat, convId, surfaceLabel, meta =
         );
         if (modelMatch) {
           activeModel = modelMatch[1].trim();
+          activeModelIsExternalSlug = /^(?:projects\/|gemini-4-hydrogen(?:-(?:low|medium|high|xhigh))?$)/.test(activeModel);
           hasExplicitModel = true;
         }
         if (!firstUserPrompt) {
@@ -743,7 +910,8 @@ function parseAntigravityTranscript(filePath, stat, convId, surfaceLabel, meta =
         const inputTokens = Number(obj.input_tokens || 0);
         const cacheReadTokens = Number(obj.cache_read_tokens || 0);
         const outputTokens = Number(obj.output_tokens || 0);
-        if (inputTokens + cacheReadTokens + outputTokens === 0) continue;
+        const hasInlineTokens = inputTokens + cacheReadTokens + outputTokens > 0;
+        if (!hasInlineTokens && !(meta.dbPath && fs.existsSync(meta.dbPath))) continue;
 
         if (Array.isArray(obj.tool_calls)) {
           if (!workspaceFromLogs) {
@@ -817,13 +985,14 @@ function parseAntigravityTranscript(filePath, stat, convId, surfaceLabel, meta =
           }
         }
 
+        let rawDurMs = 0;
         let durationMs = null;
         let tps = null;
         const nextStep = parsedSteps[idx + 1]?.obj;
-        if (nextStep && nextStep.type === 'GENERIC' && outputTokens > 0) {
+        if (nextStep && nextStep.type === 'GENERIC') {
           const startMs = obj.created_at ? Date.parse(obj.created_at) : NaN;
           const endMs = nextStep.created_at ? Date.parse(nextStep.created_at) : NaN;
-          let rawDurMs = !Number.isNaN(startMs) && !Number.isNaN(endMs) ? endMs - startMs : 0;
+          rawDurMs = !Number.isNaN(startMs) && !Number.isNaN(endMs) ? endMs - startMs : 0;
           if (rawDurMs <= 0 && idx > 0) {
             const prevStep = parsedSteps[idx - 1]?.obj;
             const prevMs = prevStep?.created_at ? Date.parse(prevStep.created_at) : NaN;
@@ -831,13 +1000,25 @@ function parseAntigravityTranscript(filePath, stat, convId, surfaceLabel, meta =
               rawDurMs = endMs - prevMs;
             }
           }
-          if (rawDurMs >= 1000 && rawDurMs <= 180_000) {
+          if (outputTokens > 0 && rawDurMs >= 1000 && rawDurMs <= 180_000) {
             const rawTps = outputTokens / (rawDurMs / 1000);
             if (rawTps > 0 && rawTps <= 400) {
               durationMs = Math.round(rawDurMs);
               tps = Number(rawTps.toFixed(1));
             }
           }
+        }
+
+        if (!hasInlineTokens) {
+          legacyPlannerSteps.push({
+            stepIndex: obj.step_index ?? i,
+            timestamp: obj.created_at || lastTimestamp || new Date(stat.mtimeMs).toISOString(),
+            fallbackModel: activeModel,
+            fallbackIsExternal: activeModelIsExternalSlug,
+            rawDurMs,
+            toolCallsCount: Array.isArray(obj.tool_calls) ? obj.tool_calls.length : 0
+          });
+          continue;
         }
 
         const turnBase = {
@@ -847,6 +1028,8 @@ function parseAntigravityTranscript(filePath, stat, convId, surfaceLabel, meta =
           sessionId: convId,
           timestamp: obj.created_at || lastTimestamp || new Date(stat.mtimeMs).toISOString(),
           model: activeModel,
+          isExternalApi: activeModelIsExternalSlug,
+          billingSource: activeModelIsExternalSlug ? 'vertex-ai' : 'subscription',
           inputTokens,
           cacheCreationTokens: 0,
           cacheReadTokens,
@@ -866,18 +1049,116 @@ function parseAntigravityTranscript(filePath, stat, convId, surfaceLabel, meta =
 
   const finalWorkspace = meta.workspacePath || workspaceFromLogs;
 
-  // Prefer the model that actually served each call (gen_metadata) over inferred models
+  // Prefer the model that actually served each call (gen_metadata) over inferred models,
+  // and recover legacy Antigravity sessions whose transcript.jsonl lacked inline token fields.
   let genMatched = 0;
   if (meta.dbPath && fs.existsSync(meta.dbPath)) {
-    genMatched = applyGenModels(turns, loadGenModelRows(meta.dbPath), convId);
+    const genRows = loadGenModelRows(meta.dbPath);
+    if (turns.length === 0 && legacyPlannerSteps.length > 0 && Array.isArray(genRows) && genRows.length > 0) {
+      const filteredRows =
+        convId && genRows.some(r => r && r.cascadeId === convId)
+          ? genRows.filter(r => !r || !r.cascadeId || r.cascadeId === convId)
+          : genRows;
+      const sameCount = filteredRows.length === legacyPlannerSteps.length;
+      let cursor = 0;
+      for (let li = 0; li < legacyPlannerSteps.length; li++) {
+        const step = legacyPlannerSteps[li];
+        let hit = -1;
+        for (let k = cursor; k < filteredRows.length; k++) {
+          const r = filteredRows[k];
+          if (r && r.lastStepIndex !== null && r.lastStepIndex + 1 === step.stepIndex) {
+            hit = k;
+            break;
+          }
+        }
+        if (hit < 0 && sameCount && filteredRows[li]) hit = li;
+        if (hit < 0) continue;
+        cursor = hit + 1;
+        const row = filteredRows[hit];
+        const inT = Math.max(0, Number(row.inputTokens || 0));
+        const crT = Math.max(0, Number(row.cacheReadTokens || 0));
+        const outT = Math.max(0, Number(row.outputTokens || 0));
+        if (inT + crT + outT <= 0) continue;
+
+        let durationMs = null;
+        let tps = null;
+        if (outT > 0 && step.rawDurMs >= 1000 && step.rawDurMs <= 180_000) {
+          const rawTps = outT / (step.rawDurMs / 1000);
+          if (rawTps > 0 && rawTps <= 400) {
+            durationMs = Math.round(step.rawDurMs);
+            tps = Number(rawTps.toFixed(1));
+          }
+        }
+
+        const mappedByEnum = row.modelEnum ? GEN_MODEL_ENUM_MAP[row.modelEnum] : '';
+        const modelName =
+          mappedByEnum ||
+          (row.modelId === 'gemini-flash-worker-agy' ? 'gemini-orchestrator-executor' : '') ||
+          row.label ||
+          row.modelId ||
+          step.fallbackModel;
+        const rawLabel = row.label || row.modelId || '';
+        const srcInfo = classifyAntigravityTurnSource({
+          responseId: row.responseId || '',
+          modelEnum: row.modelEnum || '',
+          rawLabel,
+          logIndex: meta.logIndex || null
+        });
+        const turnBase = {
+          id: `${convId}_step_${step.stepIndex}`,
+          platform: 'antigravity',
+          surface: surfaceLabel,
+          sessionId: convId,
+          timestamp: step.timestamp,
+          model: modelName,
+          modelSource: 'gen_metadata',
+          responseId: row.responseId || '',
+          modelEnum: row.modelEnum || '',
+          rawModelLabel: rawLabel,
+          isExternalApi: Boolean(srcInfo.isExternalApi || step.fallbackIsExternal),
+          billingSource: srcInfo.billingSource || (step.fallbackIsExternal ? 'vertex-ai' : 'subscription'),
+          inputTokens: inT,
+          cacheCreationTokens: 0,
+          cacheReadTokens: crT,
+          outputTokens: outT,
+          thinkingTokens: 0,
+          thinkingDurationMs: null,
+          durationMs,
+          tps,
+          thinkingTps: null,
+          toolCallsCount: step.toolCallsCount
+        };
+        turns.push({ ...turnBase, ...calculateTurnCost(turnBase) });
+        genMatched++;
+      }
+    } else if (turns.length > 0 && Array.isArray(genRows) && genRows.length > 0) {
+      genMatched = applyGenModels(turns, genRows, convId, meta.logIndex || null);
+      if (genMatched > 0) {
+        for (let ti = 0; ti < turns.length; ti++) {
+          if (turns[ti].modelSource === 'gen_metadata') {
+            turns[ti] = { ...turns[ti], ...calculateTurnCost(turns[ti]) };
+          }
+        }
+      }
+    }
     if (genMatched > 0) {
-      for (let ti = 0; ti < turns.length; ti++) {
-        if (turns[ti].modelSource === 'gen_metadata') {
-          turns[ti] = { ...turns[ti], ...calculateTurnCost(turns[ti]) };
+      // If all gen_metadata-matched turns in this session are external API, mark remaining unannotated turns likewise
+      const genTurns = turns.filter(t => t.modelSource === 'gen_metadata');
+      if (genTurns.length > 0 && genTurns.every(t => t.isExternalApi)) {
+        const dominantSource = genTurns[0].billingSource || 'vertex-ai';
+        for (const t of turns) {
+          if (t.modelSource !== 'gen_metadata' && !t.isExternalApi) {
+            t.isExternalApi = true;
+            t.billingSource = dominantSource;
+          }
         }
       }
     }
   }
+
+  const externalCount = turns.filter(t => t.isExternalApi).length;
+  const sessionIsExternal = turns.length > 0 && externalCount === turns.length;
+  const dominantExternalSource = turns.find(t => t.isExternalApi)?.billingSource || 'subscription';
 
   const data = {
     sessionId: convId,
@@ -890,6 +1171,9 @@ function parseAntigravityTranscript(filePath, stat, convId, surfaceLabel, meta =
     parentConversationId: detectedParentId || null,
     hasExplicitModel,
     hasGenModels: genMatched > 0,
+    isExternalApi: sessionIsExternal,
+    hasExternalApi: externalCount > 0,
+    billingSource: sessionIsExternal ? dominantExternalSource : externalCount > 0 ? 'mixed' : 'subscription',
     swarmMemberName: swarmMemberName || null,
     spawnedSubagents,
     firstTimestamp: firstTimestamp || new Date(stat.mtimeMs).toISOString(),
@@ -922,6 +1206,46 @@ function loadSwarmRoster(convDir, outMap) {
   } catch {}
 }
 
+function refreshSessionExternalBilling(session, logIndex) {
+  if (!session?.turns?.length) return session;
+  let changed = false;
+  const refreshedTurns = session.turns.map(t => {
+    const srcInfo = classifyAntigravityTurnSource({
+      responseId: t.responseId,
+      modelEnum: t.modelEnum,
+      rawLabel: t.rawModelLabel,
+      logIndex
+    });
+    const nextExt = t.responseId && logIndex?.has(t.responseId)
+      ? Boolean(srcInfo.isExternalApi)
+      : Boolean(t.isExternalApi || srcInfo.isExternalApi);
+    const nextSrc = t.responseId && logIndex?.has(t.responseId)
+      ? srcInfo.billingSource
+      : t.billingSource || srcInfo.billingSource;
+    if (Boolean(t.isExternalApi) !== nextExt || (t.billingSource || 'subscription') !== nextSrc) {
+      changed = true;
+      return { ...t, isExternalApi: nextExt, billingSource: nextSrc };
+    }
+    return t;
+  });
+
+  const turns = changed ? refreshedTurns : session.turns;
+  const externalCount = turns.filter(t => t.isExternalApi).length;
+  const sessionIsExternal = turns.length > 0 && externalCount === turns.length;
+  const dominantExternalSource = turns.find(t => t.isExternalApi)?.billingSource || 'subscription';
+  const nextBillingSource = sessionIsExternal ? dominantExternalSource : externalCount > 0 ? 'mixed' : 'subscription';
+  if (!changed && Boolean(session.isExternalApi) === sessionIsExternal && session.billingSource === nextBillingSource) {
+    return session;
+  }
+  return {
+    ...session,
+    isExternalApi: sessionIsExternal,
+    hasExternalApi: externalCount > 0,
+    billingSource: nextBillingSource,
+    turns
+  };
+}
+
 export function scanAllAntigravitySessions() {
   const surfaces = [
     { dir: 'antigravity', label: 'Antigravity 2.0' },
@@ -938,6 +1262,7 @@ export function scanAllAntigravitySessions() {
     if (!fs.existsSync(brainDir)) continue;
 
     const summaryMap = loadAntigravitySummaries(surfaceRoot);
+    const logIndex = loadAntigravityLogIndex(surfaceRoot);
     let convDirs = [];
     try {
       convDirs = fs.readdirSync(brainDir, { withFileTypes: true }).filter(d => d.isDirectory());
@@ -954,9 +1279,13 @@ export function scanAllAntigravitySessions() {
         const stat = fs.statSync(transcriptPath);
         const meta = {
           ...(summaryMap.get(convId) || {}),
-          dbPath: path.join(surfaceRoot, 'conversations', `${convId}.db`)
+          dbPath: path.join(surfaceRoot, 'conversations', `${convId}.db`),
+          logIndex
         };
-        const parsed = parseAntigravityTranscript(transcriptPath, stat, convId, s.label, meta);
+        const parsed = refreshSessionExternalBilling(
+          parseAntigravityTranscript(transcriptPath, stat, convId, s.label, meta),
+          logIndex
+        );
         if (parsed.turns.length > 0) {
           sessions.push(parsed);
         }
@@ -964,7 +1293,7 @@ export function scanAllAntigravitySessions() {
     }
   }
 
-  // Post-pass: resolve subagent models from parent invoke_subagent(Model: "flash" / "pro" / "inherit") calls
+  // Post-pass: resolve subagent models & external-API provenance from parent sessions
   const subagentModelMap = new Map();
   const sessionById = new Map();
   for (const sess of sessions) {
@@ -978,9 +1307,24 @@ export function scanAllAntigravitySessions() {
 
   for (let pass = 0; pass < 3; pass++) {
     for (const sess of sessions) {
-      if (sess.hasExplicitModel) continue;
       const entry = subagentModelMap.get(sess.sessionId);
       const swarmEntry = swarmModelMap.get(sess.sessionId);
+      const parentSess = sessionById.get(entry?.parentId || sess.parentConversationId);
+
+      // Propagate external-API status to subagent turns without their own gen_metadata/log record
+      if (parentSess?.isExternalApi && sess.turns.some(t => t.modelSource !== 'gen_metadata' && !t.isExternalApi)) {
+        const parentBilling = parentSess.billingSource || 'vertex-ai';
+        sess.turns = sess.turns.map(t =>
+          t.modelSource === 'gen_metadata' || t.isExternalApi
+            ? t
+            : { ...t, isExternalApi: true, billingSource: parentBilling }
+        );
+        sess.isExternalApi = sess.turns.every(t => t.isExternalApi);
+        sess.hasExternalApi = sess.turns.some(t => t.isExternalApi);
+        sess.billingSource = sess.isExternalApi ? parentBilling : 'mixed';
+      }
+
+      if (sess.hasExplicitModel) continue;
       let resolvedModel = null;
       if (swarmEntry) {
         // Swarm member: the roster records the model each worker actually runs on
@@ -988,14 +1332,12 @@ export function scanAllAntigravitySessions() {
         if (!sess.swarmMemberName) sess.swarmMemberName = swarmEntry.name;
       } else if (entry) {
         if (entry.model.startsWith('__INHERIT__:')) {
-          const parentSess = sessionById.get(entry.parentId);
           resolvedModel =
             parentSess?.turns?.[0]?.model || entry.model.slice('__INHERIT__:'.length);
         } else {
           resolvedModel = entry.model;
         }
       } else if (sess.isSubagent && sess.parentConversationId) {
-        const parentSess = sessionById.get(sess.parentConversationId);
         if (parentSess?.turns?.length > 0) {
           resolvedModel = parentSess.turns[0].model;
         }
@@ -1166,20 +1508,14 @@ function parseCodexRolloutJsonl(filePath, stat) {
           let outputTokens = 0;
           let thinkingTokens = 0;
 
-          if (lastUsage && (lastUsage.input_tokens > 0 || lastUsage.output_tokens > 0)) {
-            const rawIn = Number(lastUsage.input_tokens || 0);
-            cacheReadTokens = Number(lastUsage.cached_input_tokens || 0);
-            cacheCreationTokens = Number(lastUsage.cache_write_input_tokens || 0);
-            inputTokens = Math.max(0, rawIn - cacheReadTokens - cacheCreationTokens);
-            outputTokens = Number(lastUsage.output_tokens || 0);
-            thinkingTokens = Number(lastUsage.reasoning_output_tokens || 0);
-          } else if (totalUsage) {
+          if (totalUsage) {
             const curIn = Number(totalUsage.input_tokens || 0);
             const curCached = Number(totalUsage.cached_input_tokens || 0);
             const curCacheWrite = Number(totalUsage.cache_write_input_tokens || 0);
             const curOut = Number(totalUsage.output_tokens || 0);
             const curReas = Number(totalUsage.reasoning_output_tokens || 0);
             const curTot = Number(totalUsage.total_tokens || curIn + curOut);
+            // Skip duplicate or non-increasing cumulative snapshots
             if (curTot <= prevTotalTokens) continue;
             const deltaIn = Math.max(0, curIn - prevInputTokens);
             cacheReadTokens = Math.max(0, curCached - prevCachedTokens);
@@ -1193,6 +1529,19 @@ function parseCodexRolloutJsonl(filePath, stat) {
             prevOutputTokens = curOut;
             prevReasoningTokens = curReas;
             prevTotalTokens = curTot;
+          } else if (lastUsage && (lastUsage.input_tokens > 0 || lastUsage.output_tokens > 0)) {
+            const rawIn = Number(lastUsage.input_tokens || 0);
+            cacheReadTokens = Number(lastUsage.cached_input_tokens || 0);
+            cacheCreationTokens = Number(lastUsage.cache_write_input_tokens || 0);
+            inputTokens = Math.max(0, rawIn - cacheReadTokens - cacheCreationTokens);
+            outputTokens = Number(lastUsage.output_tokens || 0);
+            thinkingTokens = Number(lastUsage.reasoning_output_tokens || 0);
+            prevInputTokens += rawIn;
+            prevCachedTokens += cacheReadTokens;
+            prevCacheWriteTokens += cacheCreationTokens;
+            prevOutputTokens += outputTokens;
+            prevReasoningTokens += thinkingTokens;
+            prevTotalTokens += Number(lastUsage.total_tokens || rawIn + outputTokens);
           }
 
           if (inputTokens + cacheCreationTokens + cacheReadTokens + outputTokens <= 0) continue;
@@ -1411,7 +1760,8 @@ function scanAllGptSessions() {
       cached &&
       cached.mtimeMs === combinedMtime &&
       cached.size === combinedSize &&
-      cached.pricingVersion === ENGINE_VERSION
+      cached.pricingVersion === ENGINE_VERSION &&
+      cached.codexParserVersion === CODEX_PARSER_VERSION
     ) {
       logSessions = cached.data;
     } else {
@@ -1426,6 +1776,7 @@ function scanAllGptSessions() {
                AND (
                  feedback_log_body LIKE '%post sampling token usage%'
                  OR target = 'feedback_tags'
+                 OR target = 'codex_skills_extension::shadow_selection_experiment'
                  OR feedback_log_body LIKE '%ToolCall:%'
                )
              ORDER BY ts ASC, ts_nanos ASC, id ASC`
@@ -1446,7 +1797,7 @@ function scanAllGptSessions() {
               lastTsMs: null,
               lastActivityTsMs: null,
               pendingTools: 0,
-              prevCumulativeTokens: 0,
+              isShadowExperiment: false,
               rawSamplingSteps: []
             });
           }
@@ -1456,6 +1807,12 @@ function scanAllGptSessions() {
           if (!st.lastTsMs || rowTsMs > st.lastTsMs) st.lastTsMs = rowTsMs;
 
           const body = String(r.feedback_log_body || '');
+          if (
+            r.target === 'codex_skills_extension::shadow_selection_experiment' ||
+            body.includes('shadow_selection_experiment')
+          ) {
+            st.isShadowExperiment = true;
+          }
           const cwdMatch = body.match(/\bcwd=([^\s\x1b]+)/);
           if (cwdMatch && cwdMatch[1]) {
             st.cwd = cwdMatch[1].replace(/^["']|["']$/g, '');
@@ -1497,29 +1854,26 @@ function scanAllGptSessions() {
 
         logSessions = [];
         for (const st of byThread.values()) {
-          if (st.rawSamplingSteps.length === 0) continue;
+          if (st.isShadowExperiment || st.rawSamplingSteps.length === 0) continue;
           const turns = [];
           let prevTotal = 0;
           for (let idx = 0; idx < st.rawSamplingSteps.length; idx++) {
             const step = st.rawSamplingSteps[idx];
             const curTotal = step.totalUsageTokens;
-            let inputTokens = 0;
-            let cacheReadTokens = 0;
-            let outputTokens = 0;
-
-            if (idx === 0 || curTotal < prevTotal) {
-              // First sampling request in thread: initial prompt + system instructions (mostly cached in Codex)
-              cacheReadTokens = Math.round(curTotal * 0.80);
-              outputTokens = Math.min(1200, Math.max(120, Math.round(curTotal * 0.03)));
-              inputTokens = Math.max(0, curTotal - cacheReadTokens - outputTokens);
-            } else {
-              // Subsequent step in same thread: previous context is cached read, delta is new tool output + assistant output
-              const delta = Math.max(100, curTotal - prevTotal);
-              cacheReadTokens = prevTotal;
-              outputTokens = Math.min(2500, Math.max(80, Math.round(delta * 0.35)));
-              inputTokens = Math.max(0, delta - outputTokens);
-            }
+            if (idx > 0 && curTotal === prevTotal) continue;
+            const turnDelta = idx === 0 || curTotal < prevTotal ? curTotal : curTotal - prevTotal;
             prevTotal = curTotal;
+            if (turnDelta <= 0) continue;
+
+            // `total_usage_tokens` in logs_2 is cumulative session/context usage; count ONLY the step delta.
+            const cacheReadTokens = Math.round(turnDelta * 0.80);
+            const outCap = idx === 0 ? 1200 : 2500;
+            const outRatio = idx === 0 ? 0.03 : 0.15;
+            const outputTokens = Math.min(
+              turnDelta - cacheReadTokens,
+              Math.min(outCap, Math.max(1, Math.round(turnDelta * outRatio)))
+            );
+            const inputTokens = Math.max(0, turnDelta - cacheReadTokens - outputTokens);
 
             let durationMs = null;
             let tps = null;
@@ -1576,6 +1930,7 @@ function scanAllGptSessions() {
           mtimeMs: combinedMtime,
           size: combinedSize,
           pricingVersion: ENGINE_VERSION,
+          codexParserVersion: CODEX_PARSER_VERSION,
           data: logSessions
         });
         cacheDirty = true;
@@ -2737,10 +3092,14 @@ function computeAntigravityQuota(allTurns, settings, liveQuotaEntry) {
     .filter(t => !Number.isNaN(t.ts))
     .sort((a, b) => a.ts - b.ts);
 
-  // Separate turns into Gemini native pool vs Third-Party (Claude & GPT) pool
+  // Exclude external API / Vertex AI / local gateway calls from Antigravity subscription quota pools
+  const externalTurns = sortedTurns.filter(t => Boolean(t.isExternalApi));
+  const subscriptionTurns = sortedTurns.filter(t => !t.isExternalApi);
+
+  // Separate subscription turns into Gemini native pool vs Third-Party (Claude & GPT) pool
   const isThirdPartyModel = m => /claude|gpt|opus|sonnet|haiku|fable/i.test(String(m || ''));
-  const geminiTurns = sortedTurns.filter(t => !isThirdPartyModel(t.model));
-  const thirdPartyTurns = sortedTurns.filter(t => isThirdPartyModel(t.model));
+  const geminiTurns = subscriptionTurns.filter(t => !isThirdPartyModel(t.model));
+  const thirdPartyTurns = subscriptionTurns.filter(t => isThirdPartyModel(t.model));
 
   const planCatalog = (activePricing.SUBSCRIPTION_PLANS || SUBSCRIPTION_PLANS).antigravity;
   let selectedPlanKey = settings.antigravityPlan || 'ultra5x';
@@ -2819,11 +3178,15 @@ function computeAntigravityQuota(allTurns, settings, liveQuotaEntry) {
 
   const turns5h = geminiTurns.filter(t => t.ts >= cycle5hStartMs - START_GRACE_MS);
   const turns7d = geminiTurns.filter(t => t.ts >= cycle7dStartMs - START_GRACE_MS);
-  const turns30d = sortedTurns.filter(t => t.ts >= nowMs - THIRTY_D_MS);
+  const turns30d = subscriptionTurns.filter(t => t.ts >= nowMs - THIRTY_D_MS);
 
   const stats5h = sumTurnMetrics(turns5h);
   const stats7d = sumTurnMetrics(turns7d);
   const stats30d = sumTurnMetrics(turns30d);
+
+  const extStats5h = sumTurnMetrics(externalTurns.filter(t => t.ts >= cycle5hStartMs - START_GRACE_MS));
+  const extStats7d = sumTurnMetrics(externalTurns.filter(t => t.ts >= cycle7dStartMs - START_GRACE_MS));
+  const extStats30d = sumTurnMetrics(externalTurns.filter(t => t.ts >= nowMs - THIRTY_D_MS));
 
   // Auto-calibrate Gemini 5h & 7d budgets from official usedPercentage + local costUsd
   if (
@@ -2999,6 +3362,11 @@ function computeAntigravityQuota(allTurns, settings, liveQuotaEntry) {
       ...stats30d,
       roiMultiplier: Number(roiMultiplier.toFixed(2)),
       roiPercentage: Math.round(roiMultiplier * 100)
+    },
+    externalApi: {
+      fiveHour: extStats5h,
+      sevenDay: extStats7d,
+      thirtyDay: extStats30d
     }
   };
 }
@@ -3336,7 +3704,7 @@ export async function getDashboardSnapshot({ days = 30, tz = null, force = false
   const todayTotals = {
     date: todayDateStr,
     claude: { turns: 0, sessions: 0, inputTokens: 0, cacheWriteTokens: 0, cacheReadTokens: 0, outputTokens: 0, totalTokens: 0, costUsd: 0, cacheSavingsUsd: 0 },
-    antigravity: { turns: 0, sessions: 0, inputTokens: 0, cacheWriteTokens: 0, cacheReadTokens: 0, outputTokens: 0, totalTokens: 0, costUsd: 0, cacheSavingsUsd: 0, geminiTurns: 0, geminiCostUsd: 0, thirdPartyTurns: 0, thirdPartyCostUsd: 0 },
+    antigravity: { turns: 0, sessions: 0, inputTokens: 0, cacheWriteTokens: 0, cacheReadTokens: 0, outputTokens: 0, totalTokens: 0, costUsd: 0, cacheSavingsUsd: 0, geminiTurns: 0, geminiCostUsd: 0, thirdPartyTurns: 0, thirdPartyCostUsd: 0, externalApiTurns: 0, externalApiCostUsd: 0 },
     gpt: { turns: 0, sessions: 0, inputTokens: 0, cacheWriteTokens: 0, cacheReadTokens: 0, outputTokens: 0, totalTokens: 0, costUsd: 0, cacheSavingsUsd: 0 },
     combined: { turns: 0, sessions: 0, inputTokens: 0, cacheWriteTokens: 0, cacheReadTokens: 0, outputTokens: 0, totalTokens: 0, costUsd: 0, cacheSavingsUsd: 0 }
   };
@@ -3370,7 +3738,10 @@ export async function getDashboardSnapshot({ days = 30, tz = null, force = false
         addTurnToTpsTracker(todayTpsTrackers[t.platform], t);
 
         if (t.platform === 'antigravity') {
-          if (/claude|gpt|opus|sonnet|haiku|fable/i.test(String(t.model || ''))) {
+          if (t.isExternalApi) {
+            pT.externalApiTurns += 1;
+            pT.externalApiCostUsd += t.totalCostUsd;
+          } else if (/claude|gpt|opus|sonnet|haiku|fable/i.test(String(t.model || ''))) {
             pT.thirdPartyTurns += 1;
             pT.thirdPartyCostUsd += t.totalCostUsd;
           } else {
@@ -3389,12 +3760,14 @@ export async function getDashboardSnapshot({ days = 30, tz = null, force = false
         todayTotals.combined.cacheSavingsUsd += t.cacheSavingsUsd;
         addTurnToTpsTracker(todayTpsTrackers.combined, t);
 
-        const mKey = `${t.platform}:${t.modelLabel}`;
+        const mKey = `${t.platform}:${t.isExternalApi ? 'api:' : ''}${t.modelLabel}`;
         if (!todayModelMap.has(mKey)) {
           todayModelMap.set(mKey, {
             key: mKey,
             platform: t.platform,
             model: t.modelLabel,
+            isExternalApi: Boolean(t.isExternalApi),
+            billingSource: t.billingSource || (t.isExternalApi ? 'vertex-ai' : 'subscription'),
             turns: 0,
             inputTokens: 0,
             cacheWriteTokens: 0,
@@ -3453,17 +3826,24 @@ export async function getDashboardSnapshot({ days = 30, tz = null, force = false
           claudeTokens: 0,
           agyTokens: 0,
           gptTokens: 0,
+          apiTokens: 0,
           claudeCostUsd: 0,
           agyCostUsd: 0,
           gptCostUsd: 0,
+          apiCostUsd: 0,
           claudeTurns: 0,
           agyTurns: 0,
-          gptTurns: 0
+          gptTurns: 0,
+          apiTurns: 0
         });
       }
       const entry = annualDailyMap.get(dayKey);
       const tokSum = t.inputTokens + t.cacheCreationTokens + t.cacheReadTokens + t.outputTokens;
-      if (t.platform === 'claude') {
+      if (t.isExternalApi) {
+        entry.apiTokens += tokSum;
+        entry.apiCostUsd += t.totalCostUsd;
+        entry.apiTurns += 1;
+      } else if (t.platform === 'claude') {
         entry.claudeTokens += tokSum;
         entry.claudeCostUsd += t.totalCostUsd;
         entry.claudeTurns += 1;
@@ -3493,10 +3873,13 @@ export async function getDashboardSnapshot({ days = 30, tz = null, force = false
     if (turnsInWindow.length === 0) continue;
 
     let sInput = 0, sCacheWrite = 0, sCacheRead = 0, sOutput = 0, sCost = 0, sSavings = 0;
+    let sExternalTurns = 0, sSubTurns = 0;
     const sessionModels = new Set();
     const sessionTpsTracker = createTpsTracker();
 
     for (const t of turnsInWindow) {
+      if (t.isExternalApi) sExternalTurns += 1;
+      else sSubTurns += 1;
       const pTarget = totals[t.platform];
       const tokSum = t.inputTokens + t.cacheCreationTokens + t.cacheReadTokens + t.outputTokens;
 
@@ -3539,19 +3922,28 @@ export async function getDashboardSnapshot({ days = 30, tz = null, force = false
             claudeTokens: 0,
             agyTokens: 0,
             gptTokens: 0,
+            apiTokens: 0,
             claudeCostUsd: 0,
             agyCostUsd: 0,
             gptCostUsd: 0,
+            apiCostUsd: 0,
             claudeTurns: 0,
             agyTurns: 0,
             gptTurns: 0,
+            apiTurns: 0,
             claudeTpsTracker: createTpsTracker(),
             agyTpsTracker: createTpsTracker(),
-            gptTpsTracker: createTpsTracker()
+            gptTpsTracker: createTpsTracker(),
+            apiTpsTracker: createTpsTracker()
           });
         }
         const dayEntry = dailyMap.get(dayKey);
-        if (t.platform === 'claude') {
+        if (t.isExternalApi) {
+          dayEntry.apiTokens += tokSum;
+          dayEntry.apiCostUsd += t.totalCostUsd;
+          dayEntry.apiTurns += 1;
+          addTurnToTpsTracker(dayEntry.apiTpsTracker, t);
+        } else if (t.platform === 'claude') {
           dayEntry.claudeTokens += tokSum;
           dayEntry.claudeCostUsd += t.totalCostUsd;
           dayEntry.claudeTurns += 1;
@@ -3576,13 +3968,15 @@ export async function getDashboardSnapshot({ days = 30, tz = null, force = false
       }
 
       // Model aggregation
-      const mKey = `${t.platform}:${t.modelLabel}`;
+      const mKey = `${t.platform}:${t.isExternalApi ? 'api:' : ''}${t.modelLabel}`;
       if (!modelMap.has(mKey)) {
         modelMap.set(mKey, {
           key: mKey,
           platform: t.platform,
           model: t.modelLabel,
           family: t.modelFamily,
+          isExternalApi: Boolean(t.isExternalApi),
+          billingSource: t.billingSource || (t.isExternalApi ? 'vertex-ai' : 'subscription'),
           turns: 0,
           inputTokens: 0,
           cacheWriteTokens: 0,
@@ -3644,10 +4038,17 @@ export async function getDashboardSnapshot({ days = 30, tz = null, force = false
     const totalInputPool = sInput + sCacheWrite + sCacheRead;
     const cacheHitRate = totalInputPool > 0 ? (sCacheRead / totalInputPool) * 100 : 0;
 
+    const billingMode =
+      sExternalTurns > 0 ? (sSubTurns > 0 ? 'mixed' : 'external_api') : 'subscription';
+
     filteredSessions.push({
       sessionId: session.sessionId,
       platform: session.platform,
       surface: session.surface,
+      billingMode,
+      isExternalApi: billingMode === 'external_api',
+      externalApiTurns: sExternalTurns,
+      billingSource: session.billingSource || (billingMode === 'external_api' ? 'vertex-ai' : 'subscription'),
       title: session.title,
       projectLabel: session.projectLabel,
       projectPath: session.projectPath,
@@ -3674,10 +4075,11 @@ export async function getDashboardSnapshot({ days = 30, tz = null, force = false
   Object.assign(totals.combined, finalizeTpsTracker(totalsTpsTrackers.combined));
 
   const dailySeries = Array.from(dailyMap.values())
-    .map(({ claudeTpsTracker, agyTpsTracker, gptTpsTracker, ...d }) => {
+    .map(({ claudeTpsTracker, agyTpsTracker, gptTpsTracker, apiTpsTracker, ...d }) => {
       const cTps = finalizeTpsTracker(claudeTpsTracker);
       const aTps = finalizeTpsTracker(agyTpsTracker);
       const gTps = finalizeTpsTracker(gptTpsTracker);
+      const xTps = finalizeTpsTracker(apiTpsTracker);
       return {
         ...d,
         claudeAvgTps: cTps.avgTps,
@@ -3685,7 +4087,9 @@ export async function getDashboardSnapshot({ days = 30, tz = null, force = false
         agyAvgTps: aTps.avgTps,
         agyPeakTps: aTps.peakTps,
         gptAvgTps: gTps.avgTps,
-        gptPeakTps: gTps.peakTps
+        gptPeakTps: gTps.peakTps,
+        apiAvgTps: xTps.avgTps,
+        apiPeakTps: xTps.peakTps
       };
     })
     .sort((a, b) => a.date.localeCompare(b.date));

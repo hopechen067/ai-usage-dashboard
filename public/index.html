@@ -63,6 +63,11 @@
       --tp-side: light-dark(#4956a6, #6e78ad);
       --tp-soft: light-dark(rgba(92, 107, 192, 0.09), rgba(139, 149, 201, 0.12));
 
+      --api-color: light-dark(#7c3aed, #a78bfa);
+      --api-top: light-dark(#7c3aed, #a78bfa);
+      --api-side: light-dark(#6d28d9, #8b5cf6);
+      --api-soft: light-dark(rgba(124, 58, 237, 0.09), rgba(167, 139, 250, 0.12));
+
       --today-color: light-dark(#111318, #f1f3f5);
       --ok-color: light-dark(#18794e, #4e9f6e);
       --warn-color: light-dark(#b47818, #d49b35);
@@ -289,6 +294,7 @@
     .dot-agy { background-color: var(--agy-color); }
     .dot-gpt { background-color: var(--gpt-color); }
     .dot-tp { background-color: var(--tp-color); }
+    .dot-api { background-color: var(--api-color); }
     .dot-neutral { background-color: var(--text-muted); }
 
     /* Main 3-Layer Cockpit */
@@ -850,6 +856,7 @@
     .badge-gpt { background-color: var(--gpt-soft); color: var(--gpt-color); }
     .badge-tp { background-color: var(--tp-soft); color: var(--tp-color); }
     .badge-today { background-color: var(--bg-pod); color: var(--text-secondary); }
+    .badge-api { background-color: var(--bg-pod); color: var(--warn-color); border: 1px solid color-mix(in srgb, var(--warn-color) 40%, transparent); }
 
     .roi-pill {
       font-family: var(--font-mono);
@@ -1250,6 +1257,11 @@
     }
     .voxel-tooltip .tip-ratio-bar .seg-gpt {
       background-color: var(--gpt-color);
+      block-size: 100%;
+      transition: width 0.15s ease;
+    }
+    .voxel-tooltip .tip-ratio-bar .seg-api {
+      background-color: var(--api-color);
       block-size: 100%;
       transition: width 0.15s ease;
     }
@@ -2150,10 +2162,11 @@
           <div class="section-header">
             <div style="display: flex; align-items: center; gap: 0.4rem;">
               <span class="panel-drag-handle">⠿</span>
-              <h2 class="section-title">每日消耗趋势 (Claude vs AGY vs GPT)</h2>
+              <h2 class="section-title">每日消耗趋势 (Claude vs AGY vs GPT vs 第三方API)</h2>
             </div>
             <div style="display: flex; align-items: center; gap: 0.45rem;">
               <span class="chart-meta-pill" id="daily-chart-summary">--</span>
+              <span class="chart-meta-pill"><span class="dot dot-claude"></span>Claude <span class="dot dot-agy" style="margin-left:4px;"></span>AGY <span class="dot dot-gpt" style="margin-left:4px;"></span>GPT <span class="dot dot-api" style="margin-left:4px;"></span>第三方API</span>
               <div class="segmented" id="chart-metric-toggle">
                 <button type="button" data-metric="cost" class="active">额度($)</button>
                 <button type="button" data-metric="tokens">Token</button>
@@ -2626,10 +2639,14 @@
           `;
         } else if (key === 'kpi-today-agy' && todayStats?.antigravity) {
           const ta = todayStats.antigravity;
+          const extRow = (ta.externalApiTurns || 0) > 0
+            ? `<div class="tip-row"><span class="tip-label">🔑 Vertex AI / API (非订阅)</span><span class="tip-val">${fmtUsd(ta.externalApiCostUsd)} (${ta.externalApiTurns}轮)</span></div>`
+            : '';
           html = `
-            <div class="tip-header"><span>🟦 今日 Antigravity 双池明细</span><span>${ta.sessions} 个会话</span></div>
-            <div class="tip-row"><span class="tip-label">🟦 Gemini 原生池</span><span class="tip-val">${fmtUsd(ta.geminiCostUsd)} (${ta.geminiTurns}轮)</span></div>
-            <div class="tip-row"><span class="tip-label">🟪 第三方 Claude/GPT</span><span class="tip-val">${fmtUsd(ta.thirdPartyCostUsd)} (${ta.thirdPartyTurns}轮)</span></div>
+            <div class="tip-header"><span>🟦 今日 Antigravity 明细</span><span>${ta.sessions} 个会话</span></div>
+            <div class="tip-row"><span class="tip-label">🟦 Gemini 订阅原生池</span><span class="tip-val">${fmtUsd(ta.geminiCostUsd)} (${ta.geminiTurns}轮)</span></div>
+            <div class="tip-row"><span class="tip-label">🟪 第三方 Claude/GPT 池</span><span class="tip-val">${fmtUsd(ta.thirdPartyCostUsd)} (${ta.thirdPartyTurns}轮)</span></div>
+            ${extRow}
             <div class="tip-row tip-total"><span class="tip-label">今日等价费用</span><span class="tip-val">${fmtUsd(ta.costUsd)}</span></div>
             <div class="tip-row"><span class="tip-label">今日总吞吐</span><span class="tip-val">${fmtTokens(ta.totalTokens)} Tok</span></div>
             <div class="tip-row"><span class="tip-label">平均输出速率</span><span class="tip-val" style="color:var(--agy-color);">${fmtTps(ta.avgTps)} (峰值 ${fmtTps(ta.peakTps)})</span></div>
@@ -2728,6 +2745,10 @@
           const q = quotaStatus.antigravity;
           const uPct = q.fiveHour.usedPercentage;
           const color = uPct >= 85 ? 'var(--danger-color)' : uPct >= 65 ? 'var(--warn-color)' : 'var(--agy-color)';
+          const ext5h = q.externalApi?.fiveHour;
+          const extNote5h = ext5h?.turns > 0
+            ? `<div class="tip-row"><span class="tip-label">已排除 Vertex AI / API</span><span class="tip-val" style="color:var(--text-secondary);">${fmtUsd(ext5h.costUsd)} (${ext5h.turns}轮)</span></div>`
+            : '';
           html = `
             <div class="tip-header">
               <span>🟦 Gemini 原生 5H 窗口</span>
@@ -2738,12 +2759,17 @@
             <div class="tip-row"><span class="tip-label">刷新倒计时</span><span class="tip-val">${fmtResetCountdown(q.fiveHour.resetsAt)}</span></div>
             <div class="tip-row"><span class="tip-label">等价价值 / 预算</span><span class="tip-val">${fmtUsd(q.fiveHour.costUsd)} / ~$${q.fiveHourBudgetUsd}</span></div>
             <div class="tip-row"><span class="tip-label">交互总量</span><span class="tip-val">${q.fiveHour.turns} 轮 · ${fmtTokens(q.fiveHour.totalTokens)} Tok</span></div>
+            ${extNote5h}
             <div class="tip-row tip-total"><span class="tip-label">数据源直连</span><span class="tip-val" style="color:var(--ok-color);">✓ Antigravity LanguageServer 直连</span></div>
           `;
         } else if (pool === 'agy-gemini-7d') {
           const q = quotaStatus.antigravity;
           const uPct = q.sevenDay.usedPercentage;
           const color = uPct >= 85 ? 'var(--danger-color)' : uPct >= 65 ? 'var(--warn-color)' : 'var(--agy-color)';
+          const ext7d = q.externalApi?.sevenDay;
+          const extNote7d = ext7d?.turns > 0
+            ? `<div class="tip-row"><span class="tip-label">已排除 Vertex AI / API</span><span class="tip-val" style="color:var(--text-secondary);">${fmtUsd(ext7d.costUsd)} (${ext7d.turns}轮)</span></div>`
+            : '';
           html = `
             <div class="tip-header">
               <span>🟦 Gemini 原生 7D 周限额</span>
@@ -2754,6 +2780,7 @@
             <div class="tip-row"><span class="tip-label">周限额刷新倒计时</span><span class="tip-val">${fmtResetCountdown(q.sevenDay.resetsAt)}</span></div>
             <div class="tip-row"><span class="tip-label">周累计价值 / 预算</span><span class="tip-val">${fmtUsd(q.sevenDay.costUsd)} / ~$${q.sevenDayBudgetUsd}</span></div>
             <div class="tip-row"><span class="tip-label">周累计交互量</span><span class="tip-val">${q.sevenDay.turns} 轮 · ${fmtTokens(q.sevenDay.totalTokens)} Tok</span></div>
+            ${extNote7d}
             <div class="tip-row tip-total"><span class="tip-label">数据源直连</span><span class="tip-val" style="color:var(--ok-color);">✓ Antigravity LanguageServer 直连</span></div>
           `;
         } else if (pool === 'agy-tp-5h' && quotaStatus.antigravity.thirdParty) {
@@ -2887,8 +2914,11 @@
         document.getElementById('today-agy-sessions').textContent = `${agyT.sessions} 会话`;
         document.getElementById('today-agy-cost').textContent = fmtUsd(agyT.costUsd);
         document.getElementById('today-agy-turns').textContent = `${agyT.turns.toLocaleString()} 轮`;
+        const agyExtPart = (agyT.externalApiTurns || 0) > 0
+          ? ` · API ${agyT.externalApiTurns}轮 (${fmtUsdShort(agyT.externalApiCostUsd)})`
+          : '';
         document.getElementById('today-agy-sub').textContent =
-          `Gem ${agyT.geminiTurns}轮 (${fmtUsdShort(agyT.geminiCostUsd)}) · 3P ${agyT.thirdPartyTurns}轮 (${fmtUsdShort(agyT.thirdPartyCostUsd)})`;
+          `Gem ${agyT.geminiTurns}轮 (${fmtUsdShort(agyT.geminiCostUsd)}) · 3P ${agyT.thirdPartyTurns}轮 (${fmtUsdShort(agyT.thirdPartyCostUsd)})${agyExtPart}`;
 
         document.getElementById('today-gpt-sessions').textContent = `${gptToday.sessions} 会话`;
         document.getElementById('today-gpt-cost').textContent = fmtUsd(gptToday.costUsd);
@@ -3052,6 +3082,25 @@
       );
     }
 
+    // Helper: Split non-negative values into rounded percentages summing to 100 (zeros stay 0)
+    function computeSharePcts(values, decimals = 0) {
+      const total = values.reduce((acc, v) => acc + (v > 0 ? v : 0), 0);
+      if (total <= 0) return values.map(() => 0);
+      const factor = 10 ** decimals;
+      const lastPosIdx = values.reduce((last, v, idx) => (v > 0 ? idx : last), -1);
+      let used = 0;
+      return values.map((v, idx) => {
+        if (v <= 0) return 0;
+        if (idx === lastPosIdx) {
+          const rem = Math.max(0, 100 - used);
+          return Number(rem.toFixed(decimals));
+        }
+        const pct = Math.round(((v / total) * 100) * factor) / factor;
+        used += pct;
+        return pct;
+      });
+    }
+
     // Helper: Draw a Precision Architectural Column (Flat Matte, Crisp 2px Radius)
     function drawVoxelBlock(x, y, w, h, frontColor, topColor, sideColor, dx = 4, dy = 3.5, dataAttrs = '') {
       if (h <= 0.4) return '';
@@ -3089,19 +3138,22 @@
         let c = d.claudeCostUsd || 0;
         let a = d.agyCostUsd || 0;
         let g = d.gptCostUsd || 0;
+        let x = d.apiCostUsd || 0;
         if (selectedChartMetric === 'tokens') {
           c = d.claudeTokens || 0;
           a = d.agyTokens || 0;
           g = d.gptTokens || 0;
+          x = d.apiTokens || 0;
         } else if (selectedChartMetric === 'turns') {
           c = d.claudeTurns || 0;
           a = d.agyTurns || 0;
           g = d.gptTurns || 0;
+          x = d.apiTurns || 0;
         }
         if (selectedPlatform === 'claude') return c;
         if (selectedPlatform === 'antigravity') return a;
         if (selectedPlatform === 'gpt') return g;
-        return c + a + g;
+        return c + a + g + x;
       };
 
       // Determine anchor date in UTC+8 (latest in series or today in UTC+8)
@@ -3273,16 +3325,24 @@
           const weekdayStr = !isNaN(dateObj.getTime()) ? weekdays[dateObj.getDay()] : '';
 
           let html = '';
-          if (d && (d.claudeCostUsd > 0 || d.agyCostUsd > 0 || (d.gptCostUsd || 0) > 0 || d.claudeTurns > 0 || d.agyTurns > 0 || (d.gptTurns || 0) > 0)) {
+          if (d && (d.claudeCostUsd > 0 || d.agyCostUsd > 0 || (d.gptCostUsd || 0) > 0 || (d.apiCostUsd || 0) > 0 || d.claudeTurns > 0 || d.agyTurns > 0 || (d.gptTurns || 0) > 0 || (d.apiTurns || 0) > 0)) {
             const gCost = d.gptCostUsd || 0;
             const gTokens = d.gptTokens || 0;
             const gTurns = d.gptTurns || 0;
-            const totCost = d.claudeCostUsd + d.agyCostUsd + gCost;
-            const totTokens = d.claudeTokens + d.agyTokens + gTokens;
-            const totTurns = d.claudeTurns + d.agyTurns + gTurns;
-            const cPct = totCost > 0 ? ((d.claudeCostUsd / totCost) * 100).toFixed(1) : 0;
-            const aPct = totCost > 0 ? ((d.agyCostUsd / totCost) * 100).toFixed(1) : 0;
-            const gPct = totCost > 0 ? Math.max(0, 100 - Number(cPct) - Number(aPct)).toFixed(1) : 0;
+            const xCost = d.apiCostUsd || 0;
+            const xTokens = d.apiTokens || 0;
+            const xTurns = d.apiTurns || 0;
+            const totCost = d.claudeCostUsd + d.agyCostUsd + gCost + xCost;
+            const totTokens = d.claudeTokens + d.agyTokens + gTokens + xTokens;
+            const totTurns = d.claudeTurns + d.agyTurns + gTurns + xTurns;
+            const [cPctNum, aPctNum, gPctNum, xPctNum] = computeSharePcts(
+              [d.claudeCostUsd, d.agyCostUsd, gCost, xCost],
+              1
+            );
+            const cPct = cPctNum.toFixed(1);
+            const aPct = aPctNum.toFixed(1);
+            const gPct = gPctNum.toFixed(1);
+            const xPct = xPctNum.toFixed(1);
 
             html = `
               <div class="voxel-tip-head">
@@ -3308,6 +3368,10 @@
                   <span class="tip-val" style="color:var(--gpt-color);">${fmtUsd(gCost)} (${gTurns}轮 · ${fmtTokens(gTokens)})</span>
                 </div>
                 <div class="tip-row">
+                  <span class="tip-label">🔑 第三方 API</span>
+                  <span class="tip-val" style="color:var(--api-color);">${fmtUsd(xCost)} (${xTurns}轮 · ${fmtTokens(xTokens)})</span>
+                </div>
+                <div class="tip-row">
                   <span class="tip-label">合计吞吐轮次</span>
                   <span class="tip-val">${totTurns.toLocaleString()} 轮 · ${fmtTokens(totTokens)}</span>
                 </div>
@@ -3315,11 +3379,13 @@
                   <div class="seg-claude" style="width: ${cPct}%;" title="Claude: ${cPct}%"></div>
                   <div class="seg-agy" style="width: ${aPct}%;" title="AGY: ${aPct}%"></div>
                   <div class="seg-gpt" style="width: ${gPct}%;" title="GPT: ${gPct}%"></div>
+                  <div class="seg-api" style="width: ${xPct}%;" title="第三方API: ${xPct}%"></div>
                 </div>
                 <div class="tip-row" style="font-size:0.65rem; color:var(--text-dim); margin-top:2px;">
                   <span>C: ${cPct}%</span>
                   <span>AGY: ${aPct}%</span>
                   <span>GPT: ${gPct}%</span>
+                  <span>API: ${xPct}%</span>
                 </div>
               </div>
             `;
@@ -3372,20 +3438,24 @@
         if (selectedChartMetric === 'tps') {
           if (plat === 'claude') return d.claudeAvgTps || 0;
           if (plat === 'gpt') return d.gptAvgTps || 0;
+          if (plat === 'api') return d.apiAvgTps || 0;
           return d.agyAvgTps || 0;
         }
         if (selectedChartMetric === 'tokens') {
           if (plat === 'claude') return d.claudeTokens || 0;
           if (plat === 'gpt') return d.gptTokens || 0;
+          if (plat === 'api') return d.apiTokens || 0;
           return d.agyTokens || 0;
         }
         if (selectedChartMetric === 'turns') {
           if (plat === 'claude') return d.claudeTurns || 0;
           if (plat === 'gpt') return d.gptTurns || 0;
+          if (plat === 'api') return d.apiTurns || 0;
           return d.agyTurns || 0;
         }
         if (plat === 'claude') return d.claudeCostUsd || 0;
         if (plat === 'gpt') return d.gptCostUsd || 0;
+        if (plat === 'api') return d.apiCostUsd || 0;
         return d.agyCostUsd || 0;
       };
 
@@ -3394,7 +3464,8 @@
         const c = (selectedPlatform === 'all' || selectedPlatform === 'claude') ? getVal(d, 'claude') : 0;
         const a = (selectedPlatform === 'all' || selectedPlatform === 'antigravity') ? getVal(d, 'antigravity') : 0;
         const g = (selectedPlatform === 'all' || selectedPlatform === 'gpt') ? getVal(d, 'gpt') : 0;
-        const dayMax = selectedChartMetric === 'tps' ? Math.max(c, a, g) : c + a + g;
+        const x = selectedPlatform === 'all' ? getVal(d, 'api') : 0;
+        const dayMax = selectedChartMetric === 'tps' ? Math.max(c, a, g, x) : c + a + g + x;
         if (dayMax > maxVal) maxVal = dayMax;
       }
       if (maxVal <= 0) maxVal = 1;
@@ -3412,15 +3483,18 @@
         const cVal = (selectedPlatform === 'all' || selectedPlatform === 'claude') ? getVal(d, 'claude') : 0;
         const aVal = (selectedPlatform === 'all' || selectedPlatform === 'antigravity') ? getVal(d, 'antigravity') : 0;
         const gVal = (selectedPlatform === 'all' || selectedPlatform === 'gpt') ? getVal(d, 'gpt') : 0;
+        const xVal = selectedPlatform === 'all' ? getVal(d, 'api') : 0;
         const cH = (cVal / maxVal) * plotH;
         const aH = (aVal / maxVal) * plotH;
         const gH = (gVal / maxVal) * plotH;
+        const xH = (xVal / maxVal) * plotH;
 
         const x = padL + idx * barStep + (barStep - barW) / 2;
         const colX = padL + idx * barStep;
         const yClaude = padT + plotH - cH;
         const yAgy = selectedChartMetric === 'tps' ? (padT + plotH - aH) : (yClaude - aH);
         const yGpt = selectedChartMetric === 'tps' ? (padT + plotH - gH) : (yAgy - gH);
+        const yApi = selectedChartMetric === 'tps' ? (padT + plotH - xH) : (yGpt - xH);
 
         // Subtle background highlight column (visible on hover)
         hoverHighlightsSvg += `
@@ -3433,6 +3507,7 @@
           if (cH > 0) activeBars.push({ h: cH, y: yClaude, c: 'var(--claude-color)', t: 'var(--claude-top)', s: 'var(--claude-side)' });
           if (aH > 0) activeBars.push({ h: aH, y: yAgy, c: 'var(--agy-color)', t: 'var(--agy-top)', s: 'var(--agy-side)' });
           if (gH > 0) activeBars.push({ h: gH, y: yGpt, c: 'var(--gpt-color)', t: 'var(--gpt-top)', s: 'var(--gpt-side)' });
+          if (xH > 0) activeBars.push({ h: xH, y: yApi, c: 'var(--api-color)', t: 'var(--api-top)', s: 'var(--api-side)' });
           if (activeBars.length > 0) {
             const subW = Math.max(2, (barW - (activeBars.length - 1)) / activeBars.length);
             activeBars.forEach((b, bIdx) => {
@@ -3448,6 +3523,9 @@
           }
           if (gH > 0) {
             barsSvg += drawVoxelBlock(x, yGpt, barW, gH, 'var(--gpt-color)', 'var(--gpt-top)', 'var(--gpt-side)', isoDx, isoDy);
+          }
+          if (xH > 0) {
+            barsSvg += drawVoxelBlock(x, yApi, barW, xH, 'var(--api-color)', 'var(--api-top)', 'var(--api-side)', isoDx, isoDy);
           }
         }
 
@@ -3500,12 +3578,18 @@
           const gCost = d.gptCostUsd || 0;
           const gTurns = d.gptTurns || 0;
           const gTokens = d.gptTokens || 0;
-          const totalCost = d.claudeCostUsd + d.agyCostUsd + gCost;
-          const cPct = totalCost > 0 ? Math.round((d.claudeCostUsd / totalCost) * 100) : 0;
-          const aPct = totalCost > 0 ? Math.round((d.agyCostUsd / totalCost) * 100) : 0;
-          const gPct = totalCost > 0 ? Math.max(0, 100 - cPct - aPct) : 0;
-          const totalTurns = d.claudeTurns + d.agyTurns + gTurns;
-          const totalTokens = d.claudeTokens + d.agyTokens + gTokens;
+          const xCost = d.apiCostUsd || 0;
+          const xTurns = d.apiTurns || 0;
+          const xTokens = d.apiTokens || 0;
+          const xAvgTps = d.apiAvgTps || 0;
+          const xPeakTps = d.apiPeakTps || 0;
+          const totalCost = d.claudeCostUsd + d.agyCostUsd + gCost + xCost;
+          const [cPct, aPct, gPct, xPct] = computeSharePcts(
+            [d.claudeCostUsd, d.agyCostUsd, gCost, xCost],
+            0
+          );
+          const totalTurns = d.claudeTurns + d.agyTurns + gTurns + xTurns;
+          const totalTokens = d.claudeTokens + d.agyTokens + gTokens + xTokens;
 
           const html = `
             <div class="tip-header">
@@ -3533,10 +3617,18 @@
             <div class="tip-row" style="font-size:0.68rem; color:var(--text-secondary); margin-inline-start:1.2rem;">
               <span>${gTurns} 轮 · ${fmtTokens(gTokens)} Tok${d.gptAvgTps > 0 ? ` · ⚡${d.gptAvgTps} tok/s` : ''}</span>
             </div>
+            <div class="tip-row">
+              <span class="tip-label"><span class="dot dot-api" style="margin-inline-end:0.35rem;"></span>第三方 API</span>
+              <span class="tip-val">$${xCost.toFixed(2)} <span style="color:var(--text-secondary);font-size:0.68rem;">(${xPct}%)</span></span>
+            </div>
+            <div class="tip-row" style="font-size:0.68rem; color:var(--text-secondary); margin-inline-start:1.2rem;">
+              <span>${xTurns} 轮 · ${fmtTokens(xTokens)} Tok${xAvgTps > 0 ? ` · ⚡${xAvgTps} tok/s${xPeakTps > 0 ? ` (峰 ${xPeakTps})` : ''}` : ''}</span>
+            </div>
             <div class="tip-ratio-bar">
               <div class="seg-claude" style="width: ${cPct}%;"></div>
               <div class="seg-agy" style="width: ${aPct}%;"></div>
               <div class="seg-gpt" style="width: ${gPct}%;"></div>
+              <div class="seg-api" style="width: ${xPct}%;"></div>
             </div>
             <div class="tip-row tip-total">
               <span class="tip-label">💰 当日等价总值</span>
@@ -3771,11 +3863,11 @@
               const sparklineHtml = renderTpsSparkline(trendList, m.avgTps);
               return `
         <tr>
-          <td style="font-weight: 700;" class="truncate-cell" title="${m.model}">${m.model}</td>
+          <td style="font-weight: 700;" class="truncate-cell" title="${m.model}${m.isExternalApi ? ' (Vertex AI / External API)' : ''}">${m.model}</td>
           <td>
             <span class="badge ${m.platform === 'claude' ? 'badge-claude' : m.platform === 'gpt' ? 'badge-gpt' : 'badge-agy'}">
               ${m.platform === 'claude' ? 'Claude' : m.platform === 'gpt' ? 'GPT' : 'AGY'}
-            </span>
+            </span>${m.isExternalApi ? ' <span class="badge badge-api" title="Vertex AI / 独立网关 API（不计入订阅配额）">API</span>' : ''}
           </td>
           <td class="num">${m.turns.toLocaleString()}</td>
           <td class="num">${fmtTokens(m.totalTokens)}</td>
@@ -3839,7 +3931,7 @@
           <td>
             <span class="badge ${s.platform === 'claude' ? 'badge-claude' : s.platform === 'gpt' ? 'badge-gpt' : 'badge-agy'}">
               ${s.surface.replace('Claude ', 'C-').replace('Antigravity ', 'AGY-').replace('Codex Desktop', 'Codex')}
-            </span>
+            </span>${s.billingMode === 'external_api' ? ' <span class="badge badge-api" title="Vertex AI / 独立网关 API（不计入订阅配额）">API</span>' : s.billingMode === 'mixed' ? ' <span class="badge badge-api" title="含 Vertex AI / 独立网关 API 轮次（仅订阅轮次计入配额）">MIX</span>' : ''}
           </td>
           <td class="truncate-cell" style="font-weight: 700;" title="${s.title.replace(/"/g, '&quot;')}">
             ${s.isSubagent ? '↳ ' : ''}${s.title}
