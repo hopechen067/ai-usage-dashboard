@@ -47,5 +47,11 @@
   "trayOpenWeb": "打开完整网页版仪表盘",
   "trayRefresh": "立即刷新数据",
   "trayTheme": "切换明暗主题",
-  "trayExit": "退出监控组件"
+  "trayExit": "退出监控组件",
+  "trayQuotaReset": "周额度重置 (周内 / 重算)",
+  "resetTagInCycle": "[周内重置]",
+  "resetTagRecalc": "[重算周期]",
+  "resetOptInCycle": "周内重置 (不改变自然重置时间)",
+  "resetOptRecalc": "完全重置 (重新计算自然重置时间)",
+  "resetOptRevert": "撤销当前手动重置"
 }

@@ -129,6 +129,39 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, { ok: true, liveQuota: updated });
     }
 
+    if (req.method === 'GET' && url.pathname === '/api/quota-resets') {
+      const collector = await getCollector();
+      return sendJson(res, 200, { ok: true, quotaResets: collector.getQuotaResetsState() });
+    }
+
+    if (req.method === 'POST' && url.pathname === '/api/quota-sync') {
+      const body = await readJsonBody(req);
+      const collector = await getCollector();
+      const result = await collector.syncOfficialQuotasNow({
+        pool: body.pool || 'all',
+        clearStaleManual: body.clearStaleManual !== false
+      });
+      return sendJson(res, 200, result);
+    }
+
+    if (req.method === 'POST' && (url.pathname === '/api/quota-reset' || url.pathname === '/api/quota-reset/revert')) {
+      const body = await readJsonBody(req);
+      if (!body.pool) return sendJson(res, 400, { error: 'Missing pool' });
+      const collector = await getCollector();
+      if (url.pathname === '/api/quota-reset/revert' || body.action === 'revert') {
+        const result = collector.revertManualQuotaReset({ pool: body.pool });
+        return sendJson(res, 200, result);
+      }
+      if (!body.mode) return sendJson(res, 400, { error: 'Missing mode (in_cycle | recalculate)' });
+      const result = await collector.triggerManualQuotaReset({
+        pool: body.pool,
+        mode: body.mode,
+        resetAt: body.resetAt || null,
+        note: body.note || ''
+      });
+      return sendJson(res, 200, result);
+    }
+
     if (req.method === 'POST' && url.pathname === '/api/launch-widget') {
       const result = launchFloatingBall();
       return sendJson(res, result.ok ? 200 : 500, result);
@@ -226,6 +259,10 @@ server.listen(PORT, '127.0.0.1', () => {
   console.log(`  AI Usage & Quota Global Dashboard 已启动！`);
   console.log(`  浏览器访问地址: ${url}`);
   console.log(`================================================================`);
+  // Warm up SQLite cache, session scans & official quota sync immediately in background
+  if (typeof activeCollector.warmUpCollector === 'function') {
+    activeCollector.warmUpCollector().catch(() => {});
+  }
   if (shouldOpenBrowser) {
     openBrowser(url);
   }

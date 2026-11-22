@@ -3,12 +3,13 @@
 
 import { resolveUnknownModel } from './model-registry.mjs';
 
-export const PRICING_VERSION = 16;
+export const PRICING_VERSION = 18;
 
 // Gemini 4 Frontier (Carbon & Argon) Official Rates:
 // Thinking effort (low / medium / high / xhigh) uses the exact same unit price!
 // Output price includes thinking tokens.
 // Implicit caching (prompt >= 4096) provides a 95% discount (5% of input price), cacheWrite is $0.
+// Gemini 4 Neon Official Rates: $3.00 Input / $15.00 Output / $0.15 Cache read (flat, 95% implicit caching).
 // Gemini 4 Hydrogen Official Rates: $1.50 Input / $7.50 Output / $0.075 Cache read (flat, implicit caching).
 export const ARGON_STANDARD_START_MS = Date.parse('2026-12-01T00:00:00Z');
 export const FLASH_STANDARD_START_MS = Date.parse('2027-01-01T00:00:00Z');
@@ -293,6 +294,58 @@ export const MODEL_PRICING = {
     quotaWeight: 1.0
   },
 
+  // Gemini 4 Neon family ($3.00 Input / $15.00 Output / $0.15 Cache read; supports low/medium/high/xhigh)
+  'gemini-4-neon-xhigh': {
+    label: 'Gemini 4 Neon (xHigh)',
+    family: 'Gemini 4 Neon',
+    provider: 'Google',
+    inputPer1M: 3.00,
+    outputPer1M: 15.00,
+    cacheWritePer1M: 0.0,
+    cacheReadPer1M: 0.15,
+    quotaWeight: 1.5
+  },
+  'gemini-4-neon-high': {
+    label: 'Gemini 4 Neon (High)',
+    family: 'Gemini 4 Neon',
+    provider: 'Google',
+    inputPer1M: 3.00,
+    outputPer1M: 15.00,
+    cacheWritePer1M: 0.0,
+    cacheReadPer1M: 0.15,
+    quotaWeight: 1.5
+  },
+  'gemini-4-neon-medium': {
+    label: 'Gemini 4 Neon (Medium)',
+    family: 'Gemini 4 Neon',
+    provider: 'Google',
+    inputPer1M: 3.00,
+    outputPer1M: 15.00,
+    cacheWritePer1M: 0.0,
+    cacheReadPer1M: 0.15,
+    quotaWeight: 1.5
+  },
+  'gemini-4-neon-low': {
+    label: 'Gemini 4 Neon (Low)',
+    family: 'Gemini 4 Neon',
+    provider: 'Google',
+    inputPer1M: 3.00,
+    outputPer1M: 15.00,
+    cacheWritePer1M: 0.0,
+    cacheReadPer1M: 0.15,
+    quotaWeight: 1.5
+  },
+  'gemini-4-neon': {
+    label: 'Gemini 4 Neon',
+    family: 'Gemini 4 Neon',
+    provider: 'Google',
+    inputPer1M: 3.00,
+    outputPer1M: 15.00,
+    cacheWritePer1M: 0.0,
+    cacheReadPer1M: 0.15,
+    quotaWeight: 1.5
+  },
+
   // Gemini 4 Hydrogen family ($1.50 Input / $7.50 Output / $0.075 Cache read; supports low/medium/high/xhigh)
   'gemini-4-hydrogen-xhigh': {
     label: 'Gemini 4 Hydrogen (xHigh)',
@@ -367,6 +420,16 @@ export const MODEL_PRICING = {
     cacheReadPer1M: 0.10,
     quotaWeight: 1.0
   },
+  'gemini-pro-orchestrator-neon': {
+    label: 'Orchestrator (Neon)',
+    family: 'Orchestrator',
+    provider: 'Google',
+    inputPer1M: 3.00,
+    outputPer1M: 15.00,
+    cacheWritePer1M: 0.0,
+    cacheReadPer1M: 0.15,
+    quotaWeight: 1.5
+  },
   'gemini-orchestrator-executor': {
     label: 'Orchestrator · Hydrogen',
     family: 'Orchestrator',
@@ -435,8 +498,34 @@ export const MODEL_PRICING = {
     longContextOutputMultiplier: 1.5
   },
 
-  // OpenAI Codex / GPT-6, GPT-6.1 & GPT-5.6 Official API Pricing
-  // Note: 'gpt-6.1-sol' is listed first among 'gpt-*' keys so unknown future 'gpt-*' models inherit its baseline rates.
+  // OpenAI Codex / GPT-6.2, GPT-6.1, GPT-6 & GPT-5.6 Official API Pricing
+  // Note: 'gpt-6.2-sol' is listed first among 'gpt-*' keys so unknown future 'gpt-*' models inherit its baseline rates.
+  'gpt-6.2-sol': {
+    label: 'GPT-6.2-Sol',
+    family: 'GPT-6.2',
+    provider: 'OpenAI',
+    inputPer1M: 2.00,
+    outputPer1M: 10.0,
+    cacheWritePer1M: 2.50,
+    cacheReadPer1M: 0.10,
+    quotaWeight: 1.0,
+    longContextThreshold: 272_000,
+    longContextInputMultiplier: 2.0,
+    longContextOutputMultiplier: 1.5
+  },
+  'gpt-6.2-astra': {
+    label: 'GPT-6.2-Astra',
+    family: 'GPT-6.2',
+    provider: 'OpenAI',
+    inputPer1M: 8.00,
+    outputPer1M: 40.0,
+    cacheWritePer1M: 10.00,
+    cacheReadPer1M: 0.40,
+    quotaWeight: 4.0,
+    longContextThreshold: 272_000,
+    longContextInputMultiplier: 2.0,
+    longContextOutputMultiplier: 1.5
+  },
   'gpt-6.1-sol': {
     label: 'GPT-6.1-Sol',
     family: 'GPT-6.1',
@@ -458,7 +547,10 @@ export const MODEL_PRICING = {
     outputPer1M: 50.0,
     cacheWritePer1M: 12.50,
     cacheReadPer1M: 1.00,
-    quotaWeight: 5.0
+    quotaWeight: 5.0,
+    longContextThreshold: 272_000,
+    longContextInputMultiplier: 2.0,
+    longContextOutputMultiplier: 1.5
   },
   'gpt-6.1-terra': {
     label: 'GPT-6.1 Terra',
@@ -730,6 +822,8 @@ export function normalizeModelKey(rawModel = '') {
   if (m.includes('gpt-oss')) return 'gpt-oss-120b';
 
   // OpenAI Codex / GPT Family
+  if (/gpt[- ]6[.-]2[- ]astra/.test(m)) return 'gpt-6.2-astra';
+  if (/gpt[- ]6[.-]2[- ]sol/.test(m)) return 'gpt-6.2-sol';
   if (m.includes('gpt-6-astra') || m.includes('gpt-6 astra')) return 'gpt-6-astra';
   if (m.includes('gpt-6.1-sol') || m.includes('gpt-6.1 sol')) return 'gpt-6.1-sol';
   if (m.includes('gpt-6.1-terra') || m.includes('gpt-6.1 terra')) return 'gpt-6.1-terra';
@@ -754,6 +848,7 @@ export function normalizeModelKey(rawModel = '') {
   }
   if (m.includes('orchestrator')) {
     if (m.includes('argon')) return 'gemini-pro-orchestrator-argon';
+    if (m.includes('neon')) return 'gemini-pro-orchestrator-neon';
     return 'gemini-pro-orchestrator';
   }
 
@@ -768,6 +863,11 @@ export function normalizeModelKey(rawModel = '') {
   // Google Hydrogen Family
   if (m.includes('hydrogen')) {
     return `gemini-4-hydrogen${pickEffortSuffix(true)}`;
+  }
+
+  // Google Neon Family
+  if (m.includes('neon')) {
+    return `gemini-4-neon${pickEffortSuffix(true)}`;
   }
 
   // Google Carbon Family
@@ -841,11 +941,13 @@ export function getModelSpec(rawModel, timestamp = null) {
   let label = baseSpec.label;
   if (baseSpec.provider === 'OpenAI' && rawModel && !label.includes('(')) {
     const m = String(rawModel).toLowerCase();
-    if (m.includes('xhigh')) label = `${label} (xHigh)`;
-    else if (m.includes('high')) label = `${label} (High)`;
-    else if (m.includes('medium')) label = `${label} (Medium)`;
-    else if (m.includes('low')) label = `${label} (Low)`;
-    else if (m.includes('minimal')) label = `${label} (Minimal)`;
+    if (/\bultra\b/.test(m)) label = `${label} (Ultra)`;
+    else if (/\bmax\b/.test(m)) label = `${label} (Max)`;
+    else if (/\bxhigh\b/.test(m)) label = `${label} (xHigh)`;
+    else if (/\bhigh\b/.test(m)) label = `${label} (High)`;
+    else if (/\bmedium\b/.test(m)) label = `${label} (Medium)`;
+    else if (/\blow\b/.test(m)) label = `${label} (Low)`;
+    else if (/\bminimal\b/.test(m)) label = `${label} (Minimal)`;
   }
 
   // Dynamic pricing for Gemini 4 Carbon / Argon (and Orchestrator planner modes):
@@ -854,7 +956,8 @@ export function getModelSpec(rawModel, timestamp = null) {
   if (
     key.startsWith('gemini-4-argon') ||
     key.startsWith('gemini-4-carbon') ||
-    key.startsWith('gemini-pro-orchestrator')
+    key === 'gemini-pro-orchestrator' ||
+    key === 'gemini-pro-orchestrator-argon'
   ) {
     const tsMs = timestamp
       ? (typeof timestamp === 'number' ? timestamp : Date.parse(timestamp))
@@ -904,22 +1007,28 @@ export function calculateTurnCost({
   cacheReadTokens = 0,
   outputTokens = 0,
   thinkingTokens = 0,
+  serviceTier = null,
+  disableLongContext = false,
   timestamp = null
 }) {
   const spec = getModelSpec(model, timestamp);
   const totalPromptTokens = inputTokens + cacheReadTokens + cacheCreationTokens;
   const isLongContext =
+    !disableLongContext &&
     typeof spec.longContextThreshold === 'number' &&
     spec.longContextThreshold > 0 &&
     totalPromptTokens > spec.longContextThreshold;
 
+  const tierNorm = String(serviceTier || '').toLowerCase();
+  const tierMult = tierNorm === 'fast' || tierNorm === 'priority' ? 2.0 : 1.0;
+
   const inMult = isLongContext ? (spec.longContextInputMultiplier ?? 2.0) : 1.0;
   const outMult = isLongContext ? (spec.longContextOutputMultiplier ?? 1.5) : 1.0;
 
-  const effInputPer1M = spec.inputPer1M * inMult;
-  const effCacheWritePer1M = spec.cacheWritePer1M * inMult;
-  const effCacheReadPer1M = spec.cacheReadPer1M * inMult;
-  const effOutputPer1M = spec.outputPer1M * outMult;
+  const effInputPer1M = spec.inputPer1M * inMult * tierMult;
+  const effCacheWritePer1M = spec.cacheWritePer1M * inMult * tierMult;
+  const effCacheReadPer1M = spec.cacheReadPer1M * inMult * tierMult;
+  const effOutputPer1M = spec.outputPer1M * outMult * tierMult;
 
   const inputCost = (inputTokens / 1_000_000) * effInputPer1M;
   const cacheWriteCost = (cacheCreationTokens / 1_000_000) * effCacheWritePer1M;
@@ -945,6 +1054,8 @@ export function calculateTurnCost({
     thinkingCost,
     modelLabel: spec.label,
     modelFamily: spec.family,
-    pricingTier: isLongContext ? 'long-context' : (spec.pricingTier || 'standard')
+    pricingTier: isLongContext
+      ? (tierMult > 1 ? 'fast-long-context' : 'long-context')
+      : (tierMult > 1 ? 'fast' : (spec.pricingTier || 'standard'))
   };
 }

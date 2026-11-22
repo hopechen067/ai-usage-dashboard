@@ -2,7 +2,10 @@
 import {
   getDashboardSnapshot,
   fetchAntigravityOfficialQuota,
-  getModelRegistrySummary
+  getModelRegistrySummary,
+  getQuotaResetsState,
+  triggerManualQuotaReset,
+  revertManualQuotaReset
 } from './collector.mjs';
 import { MODEL_REGISTRY_PATHS } from './model-registry.mjs';
 
@@ -24,6 +27,49 @@ if (process.argv[2] === 'models') {
     );
   }
   console.log('');
+  process.exit(0);
+}
+
+// `node src/cli.mjs resets` : show weekly quota reset state across all 4 pools
+if (process.argv[2] === 'resets') {
+  const resets = getQuotaResetsState();
+  const modeLabel = { in_cycle: '周内重置(自然时间不变)', recalculate: '完全重置(重算自然时间)', natural: '自然周期' };
+  console.log('\n=== 周额度重置状态 (data/quota_resets.json) ===');
+  for (const [pool, info] of Object.entries(resets)) {
+    const ov = info.activeOverride;
+    const status = ov
+      ? `${modeLabel[ov.mode] || ov.mode} [${ov.source}] | 起算: ${ov.cycleStartAt} | 自然重置: ${ov.naturalResetsAt}`
+      : '自然周期 (无活动重置覆盖)';
+    console.log(`  • ${pool.padEnd(11)} : ${status}`);
+    for (const ev of (info.events || []).slice(0, 3)) {
+      console.log(`      - ${ev.resetAt} | ${modeLabel[ev.mode] || ev.mode} (${ev.source}) | 前段 ${ev.prevUsedPct ?? 0}% | ${ev.note || ''}`);
+    }
+  }
+  console.log('');
+  process.exit(0);
+}
+
+// `node src/cli.mjs reset <pool> <in_cycle|recalculate|revert> [resetAt]`
+if (process.argv[2] === 'reset') {
+  const pool = process.argv[3];
+  const mode = process.argv[4];
+  const resetAt = process.argv[5] || null;
+  if (!pool || !mode) {
+    console.error('用法: node src/cli.mjs reset <claude|gpt|agy-gemini|agy-tp> <in_cycle|recalculate|revert> [ISO时间]');
+    process.exit(1);
+  }
+  if (mode === 'revert') {
+    const res = revertManualQuotaReset({ pool });
+    console.log(res.reverted ? `已撤销 ${pool} 的手动重置覆盖 (${res.revertedEventId})` : res.message);
+    process.exit(0);
+  }
+  const res = await triggerManualQuotaReset({ pool, mode, resetAt });
+  const sd = res.sevenDay;
+  const label = mode === 'in_cycle' ? '周内重置(保留原自然重置时间)' : '完全重置(已重新计算自然重置时间)';
+  console.log(`\n[周额度重置成功] ${pool} -> ${label}`);
+  console.log(`  ├─ 新起算时间   : ${sd.cycleStartAt}`);
+  console.log(`  ├─ 自然重置时间 : ${sd.resetsAt || '—'}`);
+  console.log(`  └─ 重算后已用   : ${sd.usedPercentage}% (剩余 ${sd.remainingPercentage}%) | ${sd.turns} 轮 | $${sd.costUsd.toFixed(2)}\n`);
   process.exit(0);
 }
 
@@ -61,15 +107,24 @@ if (snap.todayStats) {
   );
 }
 
-for (const key of ['claude', 'antigravity']) {
+const fmtResetTag = sd => {
+  const ri = sd?.resetInfo;
+  if (!ri || ri.mode === 'natural') return '';
+  const tag = ri.mode === 'in_cycle' ? '周内重置·自然时间不变' : '完全重置·重算自然时间';
+  const startStr = ri.effectiveCycleStartAt ? new Date(ri.effectiveCycleStartAt).toLocaleString() : '';
+  return ` [${tag}${startStr ? ` @ ${startStr}` : ''}]`;
+};
+
+for (const key of ['claude', 'gpt', 'antigravity']) {
   const q = snap.quotaStatus[key];
-  const label = key === 'claude' ? 'Claude Code / Desktop' : 'Google Antigravity';
+  if (!q) continue;
+  const label = key === 'claude' ? 'Claude Code / Desktop' : key === 'gpt' ? 'OpenAI Codex / GPT' : 'Google Antigravity';
   console.log(`[${label}] 套餐: ${q.planName} (${q.quotaSourceLabel})`);
   console.log(
     `  ├─ 5小时滚动配额: 已用 ${q.fiveHour.usedPercentage}% (剩余 ${q.fiveHour.remainingPercentage}%) | ${q.fiveHour.turns} 轮 | ${fmtTok(q.fiveHour.totalTokens)} tokens | 等价 $${q.fiveHour.costUsd.toFixed(2)} / ~$${q.fiveHourBudgetUsd}`
   );
   console.log(
-    `  ├─ 7天滚动配额  : 已用 ${q.sevenDay.usedPercentage}% (剩余 ${q.sevenDay.remainingPercentage}%) | ${q.sevenDay.turns} 轮 | ${fmtTok(q.sevenDay.totalTokens)} tokens | 等价 $${q.sevenDay.costUsd.toFixed(2)} / ~$${q.sevenDayBudgetUsd}`
+    `  ├─ 7天滚动配额  : 已用 ${q.sevenDay.usedPercentage}% (剩余 ${q.sevenDay.remainingPercentage}%) | ${q.sevenDay.turns} 轮 | ${fmtTok(q.sevenDay.totalTokens)} tokens | 等价 $${q.sevenDay.costUsd.toFixed(2)} / ~$${q.sevenDayBudgetUsd}${fmtResetTag(q.sevenDay)}`
   );
   if (q.thirdParty) {
     const tp = q.thirdParty;
@@ -77,7 +132,7 @@ for (const key of ['claude', 'antigravity']) {
       `  ├─ [第三方 Claude & GPT 5h] : 已用 ${tp.fiveHour.usedPercentage}% (面板剩余 ${tp.fiveHour.nativeRemainingPct}%) | ${tp.fiveHour.turns} 轮 | ${fmtTok(tp.fiveHour.totalTokens)} tokens | 等价 $${tp.fiveHour.costUsd.toFixed(2)} / ~$${tp.fiveHourBudgetUsd}`
     );
     console.log(
-      `  ├─ [第三方 Claude & GPT 7d] : 已用 ${tp.sevenDay.usedPercentage}% (面板剩余 ${tp.sevenDay.nativeRemainingPct}%) | ${tp.sevenDay.turns} 轮 | ${fmtTok(tp.sevenDay.totalTokens)} tokens | 等价 $${tp.sevenDay.costUsd.toFixed(2)} / ~$${tp.sevenDayBudgetUsd}`
+      `  ├─ [第三方 Claude & GPT 7d] : 已用 ${tp.sevenDay.usedPercentage}% (面板剩余 ${tp.sevenDay.nativeRemainingPct}%) | ${tp.sevenDay.turns} 轮 | ${fmtTok(tp.sevenDay.totalTokens)} tokens | 等价 $${tp.sevenDay.costUsd.toFixed(2)} / ~$${tp.sevenDayBudgetUsd}${fmtResetTag(tp.sevenDay)}`
     );
   }
   if (q.externalApi?.sevenDay?.turns > 0) {

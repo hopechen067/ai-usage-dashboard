@@ -20,7 +20,7 @@ const DATA_DIR = path.resolve(import.meta.dirname, '..', 'data');
 const REGISTRY_FILE = path.join(DATA_DIR, 'discovered_models.json');
 const OVERRIDES_FILE = path.join(DATA_DIR, 'model_overrides.json');
 
-const EFFORT_RE = /\b(xhigh|high|medium|low|minimal)\b/i;
+const EFFORT_RE = /\b(ultra|max|xhigh|high|medium|low|minimal)\b/i;
 const SEEN_TOUCH_INTERVAL_MS = 60 * 60 * 1000;
 
 // ---------- small mtime-cached JSON reader ----------
@@ -63,7 +63,7 @@ export function slugifyModel(raw = '') {
 
 export function detectProvider(raw = '') {
   const s = String(raw).toLowerCase();
-  if (/gemini|gemma|argon|carbon|hydrogen|orchestrator|flash/.test(s)) return 'Google';
+  if (/gemini|gemma|argon|carbon|hydrogen|neon|orchestrator|flash/.test(s)) return 'Google';
   if (/claude|opus|sonnet|haiku|fable|mythos/.test(s)) return 'Anthropic';
   if (/gpt|codex|\bo\d\b|\bo\d-/.test(s)) return 'OpenAI';
   return 'Unknown';

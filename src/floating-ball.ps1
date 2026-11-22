@@ -1137,6 +1137,31 @@ function Set-MiniBallBar([string]$suffix, [double]$usedPct, [double]$remPct, [st
   $tbTxt.Text = $pctStr
 }
 
+function Set-SevenDayResetMeta([string]$key, [string]$baseTitle, $sevenDayObj) {
+  $titleCtrl = $ctrlHud["Title$key"]
+  $boxCtrl = $ctrlHud["Box$key"]
+  if ($null -eq $titleCtrl -or $null -eq $sevenDayObj) { return }
+  $ri = $sevenDayObj.resetInfo
+  $mode = if ($null -ne $ri) { [string]$ri.mode } else { 'natural' }
+  $srcLabel = if ($null -ne $sevenDayObj.resetSourceLabel) { [string]$sevenDayObj.resetSourceLabel } else { '自动追踪' }
+  if ($mode -eq 'in_cycle') {
+    $titleCtrl.Text = "$baseTitle $($UI.resetTagInCycle)"
+    if ($null -ne $boxCtrl) {
+      $boxCtrl.ToolTip = "自动识别周内重置（自然重置时间不变）`n来源: $srcLabel`n有效起算: $($sevenDayObj.cycleStartAt)`n官方重置: $($sevenDayObj.resetsAt)`n右键可立即强制同步官方最新重置时间"
+    }
+  } elseif ($mode -eq 'recalculate') {
+    $titleCtrl.Text = "$baseTitle $($UI.resetTagRecalc)"
+    if ($null -ne $boxCtrl) {
+      $boxCtrl.ToolTip = "自动识别新重置周期`n来源: $srcLabel`n新周期起算: $($sevenDayObj.cycleStartAt)`n官方重置: $($sevenDayObj.resetsAt)`n右键可立即强制同步官方最新重置时间"
+    }
+  } else {
+    $titleCtrl.Text = $baseTitle
+    if ($null -ne $boxCtrl) {
+      $boxCtrl.ToolTip = "官方自动追踪 (7天滚动)`n来源: $srcLabel`n起算: $($sevenDayObj.cycleStartAt)`n官方重置: $($sevenDayObj.resetsAt)`n右键可立即强制同步官方最新重置时间"
+    }
+  }
+}
+
 $script:lastSnapshot = $null
 
 function Render-Snapshot($snap) {
@@ -1195,6 +1220,7 @@ function Render-Snapshot($snap) {
 
     Set-QuotaMeter 'C5H' $c5Used $c5Rem ([double]$qc.fiveHour.costUsd) ([double]$qc.fiveHourBudgetUsd) ([int]$qc.fiveHour.turns) ([string]$qc.fiveHour.resetsAt) "#D97757"
     Set-QuotaMeter 'C7D' $c7Used $c7Rem ([double]$qc.sevenDay.costUsd) ([double]$qc.sevenDayBudgetUsd) ([int]$qc.sevenDay.turns) ([string]$qc.sevenDay.resetsAt) "#D97757"
+    Set-SevenDayResetMeta 'C7D' $UI.c7d $qc.sevenDay
     Set-MiniBallBar 'C' $c5Used $c5Rem "#D97757"
   }
 
@@ -1212,6 +1238,7 @@ function Render-Snapshot($snap) {
 
     Set-QuotaMeter 'O5H' $o5Used $o5Rem ([double]$qo.fiveHour.costUsd) ([double]$qo.fiveHourBudgetUsd) ([int]$qo.fiveHour.turns) ([string]$qo.fiveHour.resetsAt) "#10B981"
     Set-QuotaMeter 'O7D' $o7Used $o7Rem ([double]$qo.sevenDay.costUsd) ([double]$qo.sevenDayBudgetUsd) ([int]$qo.sevenDay.turns) ([string]$qo.sevenDay.resetsAt) "#10B981"
+    Set-SevenDayResetMeta 'O7D' $UI.o7d $qo.sevenDay
     Set-MiniBallBar 'O' $o5Used $o5Rem "#10B981"
   }
 
@@ -1229,6 +1256,7 @@ function Render-Snapshot($snap) {
 
     Set-QuotaMeter 'G5H' $g5Used $g5Rem ([double]$qa.fiveHour.costUsd) ([double]$qa.fiveHourBudgetUsd) ([int]$qa.fiveHour.turns) ([string]$qa.fiveHour.resetsAt) "#5E97F6"
     Set-QuotaMeter 'G7D' $g7Used $g7Rem ([double]$qa.sevenDay.costUsd) ([double]$qa.sevenDayBudgetUsd) ([int]$qa.sevenDay.turns) ([string]$qa.sevenDay.resetsAt) "#5E97F6"
+    Set-SevenDayResetMeta 'G7D' $UI.g7d $qa.sevenDay
     Set-MiniBallBar 'G' $g5Used $g5Rem "#5E97F6"
 
     if ($null -ne $qa.thirdParty) {
@@ -1240,6 +1268,7 @@ function Render-Snapshot($snap) {
 
       Set-QuotaMeter 'TP5H' $tp5Used $tp5Rem ([double]$tp.fiveHour.costUsd) ([double]$tp.fiveHourBudgetUsd) ([int]$tp.fiveHour.turns) ([string]$tp.fiveHour.resetsAt) "#8B95C9"
       Set-QuotaMeter 'TP7D' $tp7Used $tp7Rem ([double]$tp.sevenDay.costUsd) ([double]$tp.sevenDayBudgetUsd) ([int]$tp.sevenDay.turns) ([string]$tp.sevenDay.resetsAt) "#8B95C9"
+      Set-SevenDayResetMeta 'TP7D' $UI.tp7d $tp.sevenDay
       Set-MiniBallBar 'TP' $tp5Used $tp5Rem "#8B95C9"
     }
   }
@@ -1264,8 +1293,27 @@ $apiUrl = "http://127.0.0.1:$Port/api/snapshot?days=today"
 $webUrl = "http://127.0.0.1:$Port"
 
 $script:pendingTask = $null
+$script:pendingResetTask = $null
 $script:lastFetchTime = [DateTime]::MinValue
 $script:serverStartAttempted = $false
+
+function Invoke-QuotaResetAction([string]$poolKey, [string]$actionOrMode) {
+  if ($null -ne $script:pendingResetTask -and -not $script:pendingResetTask.IsCompleted) { return }
+  $ctrlHud.SyncText.Text = "SYNCING LIVE..."
+  if ($actionOrMode -eq 'sync') {
+    $endpoint = "http://127.0.0.1:$Port/api/quota-sync"
+    $bodyObj = @{ pool = $poolKey; clearStaleManual = $true }
+  } elseif ($actionOrMode -eq 'revert') {
+    $endpoint = "http://127.0.0.1:$Port/api/quota-reset/revert"
+    $bodyObj = @{ pool = $poolKey }
+  } else {
+    $endpoint = "http://127.0.0.1:$Port/api/quota-reset"
+    $bodyObj = @{ pool = $poolKey; mode = $actionOrMode }
+  }
+  $jsonBody = $bodyObj | ConvertTo-Json -Compress
+  $content = New-Object System.Net.Http.StringContent($jsonBody, [System.Text.Encoding]::UTF8, "application/json")
+  $script:pendingResetTask = $httpClient.PostAsync($endpoint, $content)
+}
 
 function Start-BackendServerIfNeeded {
   if ($script:serverStartAttempted) { return }
@@ -1506,6 +1554,49 @@ $miToggleHud = $contextMenu.Items.Add($UI.trayToggleHud)
 $miOpenWeb = $contextMenu.Items.Add($UI.trayOpenWeb)
 $miRefresh = $contextMenu.Items.Add($UI.trayRefresh)
 $miTheme = $contextMenu.Items.Add($UI.trayTheme)
+
+$miSyncOfficial = New-Object System.Windows.Forms.ToolStripMenuItem("立即同步官方重置时间 (5H & 7D)")
+$miSyncOfficial.Add_Click({ Invoke-QuotaResetAction 'all' 'sync' })
+$contextMenu.Items.Add($miSyncOfficial) | Out-Null
+
+# Right-click on individual 5H / 7D meter boxes triggers instant official quota & reset time sync
+foreach ($boxPair in @(
+  @{ ctrl = $ctrlHud.BoxC5H; pool = 'claude'; label = 'Claude 5H/7D' },
+  @{ ctrl = $ctrlHud.BoxC7D; pool = 'claude'; label = 'Claude 5H/7D' },
+  @{ ctrl = $ctrlHud.BoxO5H; pool = 'gpt'; label = 'GPT 5H/7D' },
+  @{ ctrl = $ctrlHud.BoxO7D; pool = 'gpt'; label = 'GPT 5H/7D' },
+  @{ ctrl = $ctrlHud.BoxG5H; pool = 'agy-gemini'; label = 'AGY Gemini 5H/7D' },
+  @{ ctrl = $ctrlHud.BoxG7D; pool = 'agy-gemini'; label = 'AGY Gemini 5H/7D' },
+  @{ ctrl = $ctrlHud.BoxTP5H; pool = 'agy-tp'; label = 'AGY 第三方 5H/7D' },
+  @{ ctrl = $ctrlHud.BoxTP7D; pool = 'agy-tp'; label = 'AGY 第三方 5H/7D' }
+)) {
+  if ($null -eq $boxPair.ctrl) { continue }
+  $boxMenu = New-Object System.Windows.Forms.ContextMenuStrip
+  $poolVal = $boxPair.pool
+
+  $hdr = New-Object System.Windows.Forms.ToolStripMenuItem("$($boxPair.label) · 官方自动同步")
+  $hdr.Enabled = $false
+  $boxMenu.Items.Add($hdr) | Out-Null
+  $boxMenu.Items.Add("-") | Out-Null
+
+  $bSyncPool = New-Object System.Windows.Forms.ToolStripMenuItem("立即同步该池官方 5H & 7D 重置时间")
+  $bSyncPool.Tag = $poolVal
+  $bSyncPool.Add_Click({ param($s, $e) Invoke-QuotaResetAction ([string]$s.Tag) 'sync' })
+  $boxMenu.Items.Add($bSyncPool) | Out-Null
+
+  $bSyncAll = New-Object System.Windows.Forms.ToolStripMenuItem("强制同步全平台官方重置时间")
+  $bSyncAll.Add_Click({ Invoke-QuotaResetAction 'all' 'sync' })
+  $boxMenu.Items.Add($bSyncAll) | Out-Null
+
+  $boxPair.ctrl.Tag = $boxMenu
+  $boxPair.ctrl.Add_MouseRightButtonUp({
+    param($s, $e)
+    $pos = [System.Windows.Forms.Control]::MousePosition
+    $s.Tag.Show($pos.X, $pos.Y)
+    $e.Handled = $true
+  })
+}
+
 $contextMenu.Items.Add("-") | Out-Null
 $miExit = $contextMenu.Items.Add($UI.trayExit)
 
@@ -1643,6 +1734,17 @@ $timer.Add_Tick({
   }
 
   # 3. Check pending async HTTP task
+  if ($null -ne $script:pendingResetTask -and $script:pendingResetTask.IsCompleted) {
+    $rt = $script:pendingResetTask
+    $script:pendingResetTask = $null
+    if ($rt.Status -eq [System.Threading.Tasks.TaskStatus]::RanToCompletion) {
+      Request-SnapshotNow
+    } else {
+      $ctrlHud.SyncText.Text = "RESET ERR"
+      $ctrlHud.SyncText.Foreground = New-Brush "#D95C5C"
+    }
+  }
+
   if ($null -ne $script:pendingTask -and $script:pendingTask.IsCompleted) {
     $task = $script:pendingTask
     $script:pendingTask = $null
